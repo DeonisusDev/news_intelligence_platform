@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/profiles.yml
+airflow/logs/
+airflow/plugins/__pycache__/
+.DS_Store
+*.log
+minio_data/
+postgres_data/
+clickhouse_data/
