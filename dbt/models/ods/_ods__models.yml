@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: ods_articles
+    description: >
+      Incrementally-loaded, deduplicated articles - one row per url_hash. delete+insert is
+      dbt-clickhouse's recommended incremental strategy (lightweight deletes; the legacy
+      strategy is noticeably slower on ClickHouse).
+    columns:
+      - name: url_hash
+        tests: [unique, not_null]
+      - name: url
+        tests: [not_null]
+      - name: title
+        tests: [not_null]

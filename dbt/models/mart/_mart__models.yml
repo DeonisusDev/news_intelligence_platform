@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: mart_articles
+    description: API-facing article projection, denormalized with dim_source. Full rebuild each run.
+    columns:
+      - name: url_hash
+        tests: [unique, not_null]
+      - name: url
+        tests: [not_null]
+
+  - name: dim_source
+    description: >
+      One row per source_name (the reliably-populated NewsAPI field) with a best-effort
+      source_id and a sample article domain.
+    columns:
+      - name: source_name
+        tests: [unique, not_null]
+
+  - name: mart_daily_stats
+    description: Article counts by published date and source. Recomputed each run (small data volume).

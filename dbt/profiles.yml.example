@@ -1,0 +1,18 @@
+# Real profiles.yml is gitignored (see .gitignore) - copy this if running dbt outside the
+# dbt_run task, e.g. `dbt debug` from inside the airflow-scheduler container.
+#
+# Reuses the same AIRFLOW_VAR_CLICKHOUSE_* env vars the Airflow tasks read via config.py:
+# these are plain container-level env vars (docker-compose.yml), so the dbt venv subprocess
+# spawned by BashOperator sees them too - no separate ClickHouse config to keep in sync.
+news_intelligence:
+  target: prod
+  outputs:
+    prod:
+      type: clickhouse
+      schema: "{{ env_var('AIRFLOW_VAR_CLICKHOUSE_DATABASE') }}"
+      host: "{{ env_var('AIRFLOW_VAR_CLICKHOUSE_HOST') }}"
+      port: "{{ env_var('AIRFLOW_VAR_CLICKHOUSE_PORT') | as_number }}"
+      user: "{{ env_var('AIRFLOW_VAR_CLICKHOUSE_USER') }}"
+      password: "{{ env_var('AIRFLOW_VAR_CLICKHOUSE_PASSWORD') }}"
+      secure: false
+      threads: 2

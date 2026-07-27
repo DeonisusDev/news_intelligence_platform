@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: newsapi_articles
+        description: >
+          Raw articles copied 1:1 from Postgres raw_articles by the
+          load_postgres_to_clickhouse_raw Airflow task, scoped per run to newly-inserted rows.

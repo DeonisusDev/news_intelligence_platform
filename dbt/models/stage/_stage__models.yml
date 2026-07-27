@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: stg_articles
+    description: Cleaned 1:1 view over raw.newsapi_articles - trimmed text, URL domain, truncation flag.
+    columns:
+      - name: url_hash
+        tests: [unique, not_null]
+      - name: url
+        tests: [not_null]

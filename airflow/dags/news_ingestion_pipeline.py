@@ -1,4 +1,5 @@
-"""Daily ingestion DAG: NewsAPI.org -> MinIO (raw JSON) -> Postgres (raw_articles).
+"""Daily ingestion DAG: NewsAPI.org -> MinIO (raw JSON) -> Postgres (raw_articles)
+-> ClickHouse raw -> dbt build (stage -> ods -> mart).
 
 max_active_runs=1 keeps free-tier NewsAPI/LLM quota bookkeeping trivial to reason about;
 there's no benefit to concurrent runs for a single daily batch job (see docs/adr/0001).
@@ -8,15 +9,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from airflow.decorators import dag, task
+from airflow.providers.standard.operators.bash import BashOperator
 
-from news_pipeline import audit, config, minio_io, newsapi_client, postgres_io
+from news_pipeline import audit, clickhouse_io, config, minio_io, newsapi_client, postgres_io
 
 MINIO_RAW_PREFIX = "raw/newsapi"
+DBT_PROJECT_DIR = "/opt/airflow/dbt"
+DBT_BIN = "/opt/airflow/dbt_venv/bin/dbt"
 
 
 @dag(
     dag_id="news_ingestion_pipeline",
-    description="NewsAPI -> MinIO -> Postgres raw -> (later phases: ClickHouse, LLM enrichment)",
+    description="NewsAPI -> MinIO -> Postgres raw -> ClickHouse -> dbt (later phase: LLM enrichment)",
     schedule="@daily",
     start_date=datetime(2026, 7, 1),
     catchup=False,
@@ -64,7 +68,24 @@ def news_ingestion_pipeline():
             metrics.rows_new = rows_new
             metrics.rows_duplicate = rows_duplicate
 
-    load_raw_to_postgres(fetch_newsapi_articles())
+    @task
+    def load_postgres_to_clickhouse_raw(fetch_result: dict, **context) -> None:
+        with audit.track(context) as metrics:
+            rows_copied = clickhouse_io.load_new_rows(run_id=fetch_result["ingestion_run_id"])
+            metrics.rows_fetched = rows_copied
+            metrics.rows_new = rows_copied
+
+    dbt_run = BashOperator(
+        task_id="dbt_run",
+        bash_command=(
+            f"{DBT_BIN} build "
+            f"--profiles-dir {DBT_PROJECT_DIR} --project-dir {DBT_PROJECT_DIR} --target prod "
+            "--log-path /tmp/dbt_logs --target-path /tmp/dbt_target"
+        ),
+    )
+
+    fetch_result = fetch_newsapi_articles()
+    load_raw_to_postgres(fetch_result) >> load_postgres_to_clickhouse_raw(fetch_result) >> dbt_run
 
 
 news_ingestion_pipeline()

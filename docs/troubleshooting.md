@@ -57,3 +57,18 @@ Fix: derive dates defensively - `context.get("logical_date") or datetime.now(tim
 rather than indexing `context["ds"]`/`context["logical_date"]` directly. This matters for any
 code that also has to work under `catchup=False` scheduled runs (where `logical_date` **is**
 populated) as well as ad-hoc manual triggers.
+
+## dbt can't write `logs/`/`target/` under a bind-mounted project dir
+
+`./dbt:/opt/airflow/dbt` is a bind mount from the host, owned by the host user (uid 1000 here).
+Airflow's containers run as `AIRFLOW_UID` (50000, per the upstream-recommended default) with
+group 0 - neither matches the host directory's owner or group, so dbt's default
+`mkdir -p dbt/logs` / `dbt/target` fails with `PermissionError: [Errno 13] Permission denied`.
+The dbt CLI swallows this particular failure almost silently (`dbt debug` just exits 2 with no
+stdout/stderr) - the only way to see the real traceback was invoking `dbtRunner` directly from a
+Python shell instead of the `dbt` entrypoint script.
+
+Fix: point dbt's run artifacts at the container's own filesystem instead of the bind mount, via
+the `--log-path`/`--target-path` CLI flags (e.g. `/tmp/dbt_logs`, `/tmp/dbt_target`) - `models/`
+still comes from the host bind mount, only the ephemeral run output moves. (Setting these as
+`log-path`/`target-path` keys in `dbt_project.yml` also works but is deprecated in dbt 1.12+.)

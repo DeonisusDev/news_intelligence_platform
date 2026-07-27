@@ -16,11 +16,11 @@ dedup/idempotency key).
 
 ## Status
 
-Under active build-out. Current phase: **Phase 2 — dbt-clickhouse**.
+Under active build-out. Current phase: **Phase 3 — LLM enrichment**.
 
 - [x] Phase 0 — docker-compose skeleton, all services healthy (verified: Postgres with `airflow`+`newsdata` DBs, MinIO bucket, ClickHouse `/ping`, Airflow `/api/v2/monitor/health`, FastAPI `/health`)
 - [x] Phase 1 — ingestion DAG (NewsAPI → MinIO → Postgres raw). Verified end-to-end against the real NewsAPI: 153 articles fetched, 136 new rows landed, dedup + idempotency confirmed by rerunning the DAG (second run: 153/153 correctly detected as duplicates, row count unchanged).
-- [ ] Phase 2 — dbt-clickhouse (stage/ods/mart)
+- [x] Phase 2 — dbt-clickhouse (stage → ods → mart), Postgres → ClickHouse raw via the `postgresql()` table function. Verified end-to-end: `dbt build` green (17/17, incl. `unique`/`not_null` on `url_hash`), full DAG run populates `raw`/`ods`/`mart` consistently (56/56/56 rows), idempotency confirmed by rerunning the DAG (0 new rows copied into ClickHouse, all layer counts unchanged).
 - [ ] Phase 3 — LLM enrichment → `summary_articles`
 - [ ] Phase 4 — FastAPI serving layer
 - [ ] Phase 5 — CI, docs polish

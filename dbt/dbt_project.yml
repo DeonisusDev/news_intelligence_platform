@@ -1,0 +1,27 @@
+name: "news_intelligence"
+version: "1.0.0"
+config-version: 2
+
+profile: "news_intelligence"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+# dbt/ is bind-mounted from the host (owned by the host user), but the Airflow container runs
+# as AIRFLOW_UID (50000) - it can't mkdir logs/target under a host-owned directory. Run dbt
+# with `--log-path /tmp/dbt_logs --target-path /tmp/dbt_target` (see dbt_run task in the DAG
+# and docs/troubleshooting.md) rather than setting log-path/target-path here - both are
+# deprecated as dbt_project.yml keys in favor of the CLI flags / DBT_LOG_PATH env var.
+
+models:
+  news_intelligence:
+    stage:
+      +materialized: view
+      +schema: stage
+    ods:
+      +materialized: incremental
+      +schema: ods
+    mart:
+      +materialized: table
+      +schema: mart
