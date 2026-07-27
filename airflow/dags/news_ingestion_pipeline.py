@@ -1,5 +1,6 @@
 """Daily ingestion DAG: NewsAPI.org -> MinIO (raw JSON) -> Postgres (raw_articles)
--> ClickHouse raw -> dbt build (stage -> ods -> mart).
+-> ClickHouse raw -> dbt build (stage -> ods -> mart) -> article clustering
+-> LLM enrichment (one summary per story cluster, in summary_clusters).
 
 max_active_runs=1 keeps free-tier NewsAPI/LLM quota bookkeeping trivial to reason about;
 there's no benefit to concurrent runs for a single daily batch job (see docs/adr/0001).
@@ -11,7 +12,16 @@ from datetime import datetime, timezone
 from airflow.decorators import dag, task
 from airflow.providers.standard.operators.bash import BashOperator
 
-from news_pipeline import audit, clickhouse_io, config, minio_io, newsapi_client, postgres_io
+from news_pipeline import (
+    audit,
+    clickhouse_io,
+    clustering_io,
+    config,
+    enrichment_io,
+    minio_io,
+    newsapi_client,
+    postgres_io,
+)
 
 MINIO_RAW_PREFIX = "raw/newsapi"
 DBT_PROJECT_DIR = "/opt/airflow/dbt"
@@ -20,7 +30,7 @@ DBT_BIN = "/opt/airflow/dbt_venv/bin/dbt"
 
 @dag(
     dag_id="news_ingestion_pipeline",
-    description="NewsAPI -> MinIO -> Postgres raw -> ClickHouse -> dbt (later phase: LLM enrichment)",
+    description="NewsAPI -> MinIO -> Postgres raw -> ClickHouse -> dbt -> clustering -> LLM enrichment",
     schedule="@daily",
     start_date=datetime(2026, 7, 1),
     catchup=False,
@@ -84,8 +94,44 @@ def news_ingestion_pipeline():
         ),
     )
 
+    @task
+    def cluster_articles(**context) -> None:
+        with audit.track(context) as metrics:
+            rows_written = clustering_io.compute_clusters()
+            metrics.rows_fetched = rows_written
+            metrics.rows_new = rows_written
+
+    MAX_ENRICHMENT_FAILURE_RATE = 0.2
+
+    @task
+    def llm_enrichment(**context) -> None:
+        settings = config.get_settings()
+        with audit.track(context) as metrics:
+            attempted, succeeded, failed = enrichment_io.enrich_pending_clusters(
+                api_key=settings.openrouter_api_key,
+                base_url=settings.openrouter_base_url,
+                model=settings.openrouter_model,
+            )
+            # Counts are recorded on `metrics` before the failure-rate check below, so
+            # pipeline_run_log reflects what actually happened even if this then raises.
+            metrics.rows_fetched = attempted
+            metrics.rows_new = succeeded
+            metrics.rows_failed = failed
+
+            if attempted and failed / attempted > MAX_ENRICHMENT_FAILURE_RATE:
+                raise RuntimeError(
+                    f"LLM enrichment failure rate too high: {failed}/{attempted} failed "
+                    f"(threshold {MAX_ENRICHMENT_FAILURE_RATE:.0%})"
+                )
+
     fetch_result = fetch_newsapi_articles()
-    load_raw_to_postgres(fetch_result) >> load_postgres_to_clickhouse_raw(fetch_result) >> dbt_run
+    (
+        load_raw_to_postgres(fetch_result)
+        >> load_postgres_to_clickhouse_raw(fetch_result)
+        >> dbt_run
+        >> cluster_articles()
+        >> llm_enrichment()
+    )
 
 
 news_ingestion_pipeline()

@@ -1,0 +1,17 @@
+You are a news analysis assistant. Below are several news article headlines - possibly from
+different sources - that all report on the SAME underlying story or event. Analyze them
+together, as one story, and respond with ONLY a single valid JSON object - no markdown, no
+code fences, no commentary before or after it - matching exactly this shape:
+
+{{
+  "summary": "a neutral 2-3 sentence summary of the underlying story, synthesized across all sources below",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "topic": "one short category label, e.g. Technology, Politics, Business, Sports, Health, Science, Entertainment, World",
+  "sentiment": "positive, negative, or neutral",
+  "sentiment_score": a number from -1.0 (very negative) to 1.0 (very positive)
+}}
+
+Articles reporting on this story:
+{articles_block}
+
+Respond with ONLY the JSON object described above.

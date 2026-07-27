@@ -38,6 +38,7 @@ x-airflow-common: &airflow-common
     - ./airflow/plugins:/opt/airflow/plugins
     - airflow_logs:/opt/airflow/logs
     - ./dbt:/opt/airflow/dbt
+    - ./prompts:/opt/airflow/prompts
   user: "${AIRFLOW_UID}:0"
   depends_on:
     postgres:
