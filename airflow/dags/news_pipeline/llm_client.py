@@ -8,6 +8,7 @@ JSON directly and validates/retries rather than depending on structured-output s
 LLM providers (e.g. to a local Ollama server, or a paid OpenAI model) only requires changing
 base_url/model in config - no code change.
 """
+
 from __future__ import annotations
 
 import json
@@ -53,7 +54,9 @@ class EnrichmentError(Exception):
 def _extract_enrichment(raw_text: str) -> ClusterEnrichment:
     match = _JSON_BLOCK_RE.search(raw_text)
     if not match:
-        raise EnrichmentError(f"No JSON object found in LLM response: {raw_text[:500]!r}", raw_response=raw_text)
+        raise EnrichmentError(
+            f"No JSON object found in LLM response: {raw_text[:500]!r}", raw_response=raw_text
+        )
     try:
         data = json.loads(match.group(0))
         return ClusterEnrichment.model_validate(data)

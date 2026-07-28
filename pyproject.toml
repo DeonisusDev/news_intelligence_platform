@@ -1,0 +1,15 @@
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = [
+    # FastAPI's own recommended pattern is Depends(...) in argument defaults - flagging it
+    # as a general "don't call functions in defaults" antipattern doesn't apply here.
+    "B008",
+]

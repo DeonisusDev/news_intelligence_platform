@@ -1,5 +1,7 @@
 # News Intelligence Platform
 
+[![CI](https://github.com/DeonisusDev/news_intelligence_platform/actions/workflows/ci.yml/badge.svg)](https://github.com/DeonisusDev/news_intelligence_platform/actions/workflows/ci.yml)
+
 A daily ETL/ELT pipeline that ingests news articles, lands them immutably, transforms them through
 a layered warehouse, enriches them with an LLM, and serves the result through an API. Built as a
 Data Engineering portfolio project — the LLM step is one stage in the pipeline, not the point of it.
@@ -27,7 +29,7 @@ Under active build-out. Current phase: **Phase 5 — CI, docs polish**.
 - [x] Phase 2 — dbt-clickhouse (stage → ods → mart), Postgres → ClickHouse raw via the `postgresql()` table function. Verified end-to-end: `dbt build` green (17/17, incl. `unique`/`not_null` on `url_hash`), full DAG run populates `raw`/`ods`/`mart` consistently (56/56/56 rows), idempotency confirmed by rerunning the DAG (0 new rows copied into ClickHouse, all layer counts unchanged).
 - [x] Phase 3 — article clustering (title-token similarity, no LLM) → LLM enrichment → `summary_clusters`. Verified end-to-end against the real OpenRouter API: 159 clusters summarized (0 failures), confirmed clustering correctly groups the same story across outlets (e.g. Forbes + its Biztoc.com syndication landed in one cluster). Idempotency confirmed by rerunning the DAG after new articles arrived: only the 66 genuinely new clusters were processed, all 159 previously-summarized clusters were skipped and their `cluster_id`s stayed stable.
 - [x] Phase 4 — FastAPI serving layer. Discovery-feed shaped: `GET /discover` (paginated summary cards, optional `topic` filter), `GET /discover/{cluster_id}` (card + full source-article list, 404 on unknown id), `GET /stats/daily`, `GET /stats/topics`, `GET /pipeline/runs` (Postgres `pipeline_run_log`, independent of the Airflow UI). Verified against the live stack: all endpoints return real joined data, `/docs` Swagger UI works, 404 path confirmed, detail endpoint spot-checked against the corrected Forbes/Biztoc.com cluster (`article_count: 2`, both sources listed correctly).
-- [ ] Phase 5 — CI, docs polish
+- [ ] Phase 5 — CI, docs polish. `.github/workflows/ci.yml` added: `lint` (`ruff check` + `black --check`, both clean locally), `dbt-build` (spins up a real ClickHouse service container, applies the fresh-install DDL, runs a genuine `dbt build` - verified locally: 17/17 green against an empty instance), `compose-smoke` (`docker compose config -q` + `docker compose up --wait` against every documented health endpoint). Architecture diagram and sample API calls added to this README. Not yet confirmed green on GitHub Actions itself (no `gh` CLI / API access from this environment) - check the badge/Actions tab after this pushes.
 
 ## Prerequisites
 
@@ -57,6 +59,26 @@ make ps      # check all services are healthy
 - ClickHouse HTTP: http://localhost:8123/ping
 - FastAPI: http://localhost:8000/docs — `GET /discover`, `GET /discover/{cluster_id}`,
   `GET /stats/daily`, `GET /stats/topics`, `GET /pipeline/runs`
+
+## Sample API calls
+
+```bash
+# Discovery feed - one card per story-cluster, newest first
+curl "http://localhost:8000/discover?limit=5"
+
+# Same feed, filtered to one topic
+curl "http://localhost:8000/discover?topic=Technology&limit=5"
+
+# Expand a card into its individual source articles
+curl "http://localhost:8000/discover/<cluster_id>"
+
+# Article volume by day/source, and cluster counts by topic
+curl "http://localhost:8000/stats/daily?limit=10"
+curl "http://localhost:8000/stats/topics"
+
+# Ingestion run history (independent of the Airflow UI)
+curl "http://localhost:8000/pipeline/runs?limit=10"
+```
 
 ## Known limitations
 

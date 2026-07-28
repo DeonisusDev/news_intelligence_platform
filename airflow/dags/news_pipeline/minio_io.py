@@ -5,6 +5,7 @@ Bucket creation is handled idempotently here too (not only by the docker-compose
 container *start order*, not that the init container's mc command has actually finished
 before the DAG's first real run.
 """
+
 from __future__ import annotations
 
 import json

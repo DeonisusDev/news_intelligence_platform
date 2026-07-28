@@ -7,6 +7,7 @@ had (see postgres_io.py). Scoping this copy by ingestion_run_id therefore both s
 since last run" and reuses the same idempotency guarantee: rerunning an already-processed day
 finds zero matching Postgres rows and copies nothing into ClickHouse.
 """
+
 from __future__ import annotations
 
 from airflow.hooks.base import BaseHook

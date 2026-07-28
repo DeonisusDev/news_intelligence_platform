@@ -2,10 +2,11 @@
 
 See docs/adr/0004-dedup-key-strategy.md for the reasoning.
 """
+
 from __future__ import annotations
 
 import hashlib
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 _TRACKING_PARAM_PREFIXES = ("utm_",)
 _TRACKING_PARAMS = {"fbclid", "gclid", "msclkid", "mc_cid", "mc_eid"}

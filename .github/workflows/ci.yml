@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install lint tools
+        run: pip install ruff black
+      - name: ruff check
+        run: ruff check airflow/dags fastapi_app scripts
+      - name: black --check
+        run: black --check airflow/dags fastapi_app scripts
+
+  dbt-build:
+    runs-on: ubuntu-latest
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.3
+        ports:
+          - 8123:8123
+        env:
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: clickhouse
+          CLICKHOUSE_DB: default
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:8123/ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Same version pins the real airflow image installs into its dedicated dbt venv
+      # (see airflow/Dockerfile) - keeps CI honest about what actually runs in prod.
+      - name: Install dbt
+        run: pip install -r airflow/dbt-requirements.txt
+      - name: Initialize ClickHouse schema (fresh-install DDL, not the migration scripts)
+        run: python scripts/ci_init_clickhouse.py
+        env:
+          CLICKHOUSE_HOST: localhost
+          CLICKHOUSE_PORT: "8123"
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: clickhouse
+      - name: dbt build
+        working-directory: dbt
+        run: >
+          dbt build --profiles-dir . --project-dir . --profile news_intelligence --target prod
+          --log-path /tmp/dbt_logs --target-path /tmp/dbt_target
+        env:
+          AIRFLOW_VAR_CLICKHOUSE_HOST: localhost
+          AIRFLOW_VAR_CLICKHOUSE_PORT: "8123"
+          AIRFLOW_VAR_CLICKHOUSE_USER: default
+          AIRFLOW_VAR_CLICKHOUSE_PASSWORD: clickhouse
+          AIRFLOW_VAR_CLICKHOUSE_DATABASE: default
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate a throwaway .env
+        run: python3 scripts/generate_ci_env.py
+      - name: Validate compose file
+        run: docker compose config -q
+      - name: Bring the stack up and wait for every healthcheck
+        run: docker compose up -d --wait --wait-timeout 300
+      - name: Check every documented health endpoint
+        run: |
+          curl -sf http://localhost:8080/api/v2/monitor/health
+          curl -sf http://localhost:8123/ping
+          curl -sf http://localhost:8000/health
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

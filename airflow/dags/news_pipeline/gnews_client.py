@@ -7,6 +7,7 @@ Free tier constraints this is designed around: 100 requests/day, and pagination 
 is a paid-only feature - a single request per category (max 10 articles/request) is all the
 free tier allows, so there's no page-loop here unlike newsapi_client.py.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,9 @@ def fetch_articles_for_category(api_key: str, category: str) -> FetchResult:
     if response.status_code != 200:
         logger.warning(
             "GNews request failed category=%s status=%s body=%s",
-            category, response.status_code, response.text[:500],
+            category,
+            response.status_code,
+            response.text[:500],
         )
         return FetchResult(category=category, articles=[], requests_used=1)
 
@@ -51,7 +54,9 @@ def fetch_articles_for_category(api_key: str, category: str) -> FetchResult:
     return FetchResult(category=category, articles=payload.get("articles", []), requests_used=1)
 
 
-def fetch_articles(api_key: str, categories: list[str], max_requests_per_run: int) -> list[tuple[str, dict]]:
+def fetch_articles(
+    api_key: str, categories: list[str], max_requests_per_run: int
+) -> list[tuple[str, dict]]:
     """Fetch top headlines across all configured categories, respecting a total request budget
     for the whole run (one request per category). Returns a list of (category, article) pairs.
     """

@@ -8,6 +8,7 @@ Free Developer tier constraints this is designed around (not silently ignored):
 100 requests/day total (shared with manual testing), ~24h publication delay, and the
 `content` field truncated to ~260 characters. See README "Known limitations".
 """
+
 from __future__ import annotations
 
 import logging
@@ -50,7 +51,10 @@ def fetch_articles_for_category(api_key: str, category: str, max_requests: int) 
         if response.status_code != 200:
             logger.warning(
                 "NewsAPI request failed category=%s page=%s status=%s body=%s",
-                category, page, response.status_code, response.text[:500],
+                category,
+                page,
+                response.status_code,
+                response.text[:500],
             )
             break
 
@@ -65,7 +69,9 @@ def fetch_articles_for_category(api_key: str, category: str, max_requests: int) 
     return FetchResult(category=category, articles=articles, requests_used=requests_used)
 
 
-def fetch_articles(api_key: str, categories: list[str], max_requests_per_run: int) -> list[tuple[str, dict]]:
+def fetch_articles(
+    api_key: str, categories: list[str], max_requests_per_run: int
+) -> list[tuple[str, dict]]:
     """Fetch top headlines across all configured categories, respecting a total request budget
     for the whole run (not per category). Returns a list of (category, article) pairs.
     """

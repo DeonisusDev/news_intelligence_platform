@@ -2,6 +2,7 @@
 own UI/metadata DB (row/duplicate/failure counts are business metrics Airflow has no
 visibility into, so each task records them explicitly).
 """
+
 from __future__ import annotations
 
 import json
@@ -54,7 +55,9 @@ def track(context: dict):
     execution_date = context.get("logical_date") or datetime.now(timezone.utc)
     started_at = datetime.now(timezone.utc)
 
-    _hook().run(_INSERT_SQL, parameters=(run_id, dag_id, task_id, try_number, execution_date, started_at))
+    _hook().run(
+        _INSERT_SQL, parameters=(run_id, dag_id, task_id, try_number, execution_date, started_at)
+    )
 
     metrics = RunMetrics()
     status = "success"

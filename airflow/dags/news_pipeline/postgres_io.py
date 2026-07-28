@@ -8,6 +8,7 @@ shape (e.g. GNews has no source.id/author, and calls the image field "image" not
 so _extract_common_fields() normalizes both into one row shape before insert. raw_payload still
 stores the untouched provider-native JSON for replay/audit.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,10 +59,11 @@ def _extract_common_fields(provider: str, article: dict) -> dict:
     }
 
 
-def upsert_articles(
-    items: list[tuple[str, str, dict]], ingestion_run_id: str
-) -> tuple[int, int]:
-    """`items` is a list of (provider, category, article) tuples. Returns (rows_new, rows_duplicate)."""
+def upsert_articles(items: list[tuple[str, str, dict]], ingestion_run_id: str) -> tuple[int, int]:
+    """`items` is a list of (provider, category, article) tuples.
+
+    Returns (rows_new, rows_duplicate).
+    """
     if not items:
         return 0, 0
 
@@ -71,23 +73,25 @@ def upsert_articles(
         fields = _extract_common_fields(provider, article)
         if not fields["url"]:
             continue
-        rows.append((
-            url_hash(fields["url"]),
-            fields["source_id"],
-            fields["source_name"],
-            fields["author"],
-            fields["title"],
-            fields["description"],
-            fields["content"],
-            fields["url"],
-            fields["url_to_image"],
-            fields["published_at"],
-            category,
-            provider,
-            fetched_at,
-            json.dumps(article, ensure_ascii=False),
-            ingestion_run_id,
-        ))
+        rows.append(
+            (
+                url_hash(fields["url"]),
+                fields["source_id"],
+                fields["source_name"],
+                fields["author"],
+                fields["title"],
+                fields["description"],
+                fields["content"],
+                fields["url"],
+                fields["url_to_image"],
+                fields["published_at"],
+                category,
+                provider,
+                fetched_at,
+                json.dumps(article, ensure_ascii=False),
+                ingestion_run_id,
+            )
+        )
 
     hook = PostgresHook(postgres_conn_id=NEWSDATA_CONN_ID)
     conn = hook.get_conn()

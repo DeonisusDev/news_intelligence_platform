@@ -7,6 +7,7 @@ enrich_pending_clusters always returns counts rather than raising, so the caller
 in pipeline_run_log *before* deciding whether the overall failure rate warrants failing the task
 (see llm_enrichment in the DAG).
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,8 +34,17 @@ group by c.cluster_id
 """
 
 _INSERT_COLUMNS = [
-    "cluster_id", "summary", "keywords", "topic", "sentiment", "sentiment_score",
-    "llm_model", "enrichment_status", "raw_llm_response", "article_count", "enriched_at",
+    "cluster_id",
+    "summary",
+    "keywords",
+    "topic",
+    "sentiment",
+    "sentiment_score",
+    "llm_model",
+    "enrichment_status",
+    "raw_llm_response",
+    "article_count",
+    "enriched_at",
 ]
 
 
@@ -51,24 +61,44 @@ def enrich_pending_clusters(*, api_key: str, base_url: str, model: str) -> tuple
     succeeded = 0
     failed = 0
     for i, (cluster_id, members) in enumerate(pending, start=1):
-        articles = [
-            ClusterArticle(title=t, description=d, source_name=s)
-            for t, d, s in members
-        ]
+        articles = [ClusterArticle(title=t, description=d, source_name=s) for t, d, s in members]
         enriched_at = datetime.now(timezone.utc)
         try:
             enrichment = enrich_cluster(
-                api_key=api_key, base_url=base_url, model=model, articles=articles,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                articles=articles,
             )
             row = (
-                cluster_id, enrichment.summary, enrichment.keywords, enrichment.topic,
-                enrichment.sentiment, enrichment.sentiment_score, model, "success", None,
-                len(articles), enriched_at,
+                cluster_id,
+                enrichment.summary,
+                enrichment.keywords,
+                enrichment.topic,
+                enrichment.sentiment,
+                enrichment.sentiment_score,
+                model,
+                "success",
+                None,
+                len(articles),
+                enriched_at,
             )
             succeeded += 1
         except Exception as exc:
             raw_response = getattr(exc, "raw_response", "") or str(exc)[:2000]
-            row = (cluster_id, "", [], "", "", None, model, "failed", raw_response, len(articles), enriched_at)
+            row = (
+                cluster_id,
+                "",
+                [],
+                "",
+                "",
+                None,
+                model,
+                "failed",
+                raw_response,
+                len(articles),
+                enriched_at,
+            )
             failed += 1
 
         # Inserted one row at a time, not batched at the end: if the task later fails or times
@@ -76,7 +106,11 @@ def enrich_pending_clusters(*, api_key: str, base_url: str, model: str) -> tuple
         client.insert("mart.summary_clusters", [row], column_names=_INSERT_COLUMNS)
         log.info(
             "llm_enrichment: %d/%d done (cluster_id=%s, articles=%d, status=%s)",
-            i, len(pending), cluster_id, len(articles), row[7],
+            i,
+            len(pending),
+            cluster_id,
+            len(articles),
+            row[7],
         )
 
     return succeeded + failed, succeeded, failed

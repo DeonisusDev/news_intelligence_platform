@@ -8,13 +8,13 @@ docs/adr/0006-top-headlines-multi-source.md. max_active_runs=1 keeps free-tier N
 quota bookkeeping trivial to reason about; there's no benefit to concurrent runs for a single
 daily batch job (see docs/adr/0001).
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 from airflow.decorators import dag, task
 from airflow.providers.standard.operators.bash import BashOperator
-
 from news_pipeline import (
     audit,
     clickhouse_io,
@@ -34,7 +34,8 @@ DBT_BIN = "/opt/airflow/dbt_venv/bin/dbt"
 
 @dag(
     dag_id="news_ingestion_pipeline",
-    description="NewsAPI+GNews top-headlines -> MinIO -> Postgres raw -> ClickHouse -> dbt -> clustering -> LLM enrichment",
+    description="NewsAPI+GNews top-headlines -> MinIO -> Postgres raw -> ClickHouse -> dbt -> "
+    "clustering -> LLM enrichment",
     schedule="@daily",
     start_date=datetime(2026, 7, 1),
     catchup=False,
@@ -110,7 +111,9 @@ def news_ingestion_pipeline():
             items = []
             for fetch_result in fetch_results:
                 payload = minio_io.get_json(settings.minio_bucket, fetch_result["minio_key"])
-                items.extend((item["provider"], item["category"], item["article"]) for item in payload)
+                items.extend(
+                    (item["provider"], item["category"], item["article"]) for item in payload
+                )
             metrics.rows_fetched = len(items)
 
             rows_new, rows_duplicate = postgres_io.upsert_articles(

@@ -1,6 +1,7 @@
 """Pydantic response models. Named around the Discovery-feed shape: one summary card per
 story-cluster, expandable into its individual source articles - not a flat article list.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime

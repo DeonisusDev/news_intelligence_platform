@@ -5,6 +5,7 @@ built on the less-maintained native-protocol clickhouse-driver with uncertain Ai
 compatibility - a hand-rolled hook over clickhouse-connect's HTTP client is small, transparent,
 and reuses Airflow's own Variable-backed config plumbing (see config.py).
 """
+
 from __future__ import annotations
 
 import clickhouse_connect

@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-
 from routers import discover, pipeline, stats
 
 app = FastAPI(title="News Intelligence Platform API")

@@ -11,6 +11,7 @@ outlet picks up the story later. The trade-off - documented in docs/adr/0005 - i
 summary then won't automatically reflect newcomers; refreshing it would need a manual
 delete-and-rerun against summary_clusters for that cluster_id.
 """
+
 from __future__ import annotations
 
 import re
@@ -25,10 +26,50 @@ from .clickhouse_hook import ClickHouseHook
 _SELECT_ARTICLES_SQL = "select url_hash, title, published_at from mart.mart_articles"
 
 _STOPWORDS = {
-    "the", "a", "an", "to", "of", "in", "on", "for", "and", "is", "are", "at", "by",
-    "with", "as", "it", "its", "from", "after", "over", "into", "amid", "how", "why",
-    "what", "will", "says", "said", "new", "more", "than", "this", "that", "be", "has",
-    "have", "had", "not", "but", "or", "was", "were", "be", "been", "being",
+    "the",
+    "a",
+    "an",
+    "to",
+    "of",
+    "in",
+    "on",
+    "for",
+    "and",
+    "is",
+    "are",
+    "at",
+    "by",
+    "with",
+    "as",
+    "it",
+    "its",
+    "from",
+    "after",
+    "over",
+    "into",
+    "amid",
+    "how",
+    "why",
+    "what",
+    "will",
+    "says",
+    "said",
+    "new",
+    "more",
+    "than",
+    "this",
+    "that",
+    "be",
+    "has",
+    "have",
+    "had",
+    "not",
+    "but",
+    "or",
+    "was",
+    "were",
+    "been",
+    "being",
 }
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -75,7 +116,9 @@ def compute_clusters() -> int:
     if not rows:
         return 0
 
-    articles = [(url_hash, _tokenize(title), published_at) for url_hash, title, published_at in rows]
+    articles = [
+        (url_hash, _tokenize(title), published_at) for url_hash, title, published_at in rows
+    ]
     uf = _UnionFind(url_hash for url_hash, _, _ in articles)
 
     for i in range(len(articles)):

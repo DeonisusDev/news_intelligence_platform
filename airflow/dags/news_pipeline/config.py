@@ -5,6 +5,7 @@ transparently backs Variable.get("some_key") with an AIRFLOW_VAR_SOME_KEY env va
 (see docker-compose.yml), so this works the same whether a value later moves into the metadata
 DB, the Airflow UI, or a secrets backend - no code change required.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -42,7 +43,9 @@ def get_settings() -> Settings:
             ).split(",")
             if c.strip()
         ],
-        newsapi_max_requests_per_run=int(Variable.get("newsapi_max_requests_per_run", default_var="20")),
+        newsapi_max_requests_per_run=int(
+            Variable.get("newsapi_max_requests_per_run", default_var="20")
+        ),
         gnews_api_key=Variable.get("gnews_api_key", default_var=""),
         gnews_categories=[
             c.strip()
@@ -52,7 +55,9 @@ def get_settings() -> Settings:
             ).split(",")
             if c.strip()
         ],
-        gnews_max_requests_per_run=int(Variable.get("gnews_max_requests_per_run", default_var="20")),
+        gnews_max_requests_per_run=int(
+            Variable.get("gnews_max_requests_per_run", default_var="20")
+        ),
         minio_bucket=Variable.get("minio_bucket"),
         openrouter_api_key=Variable.get("openrouter_api_key"),
         openrouter_base_url=Variable.get("openrouter_base_url"),
