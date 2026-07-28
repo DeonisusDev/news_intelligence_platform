@@ -85,8 +85,26 @@ as `table`, a full drop-and-recreate every run) picked up the new column automat
 `ods_articles` didn't.
 
 Fix: `ALTER TABLE ... RENAME COLUMN` / `ADD COLUMN` the existing incremental table by hand to
-match the new upstream shape (see `sql/clickhouse/005_migrate_category_provider.sql`) - or, if
-the data is fully disposable, drop the table and let dbt do a full rebuild on the next run.
+match the new upstream shape (see `sql/clickhouse/migrations/005_migrate_category_provider.sql`)
+- or, if the data is fully disposable, drop the table and let dbt do a full rebuild on the next
+run.
+
+## Migration scripts under `docker-entrypoint-initdb.d` also run on a *fresh* install
+
+Postgres's and ClickHouse's official images run every `*.sql` file directly inside
+`/docker-entrypoint-initdb.d/` on first container start against an empty volume - `docker-compose.yml`
+mounts the whole `sql/postgres/`/`sql/clickhouse/` directory there, so a migration script meant
+only for *already-running* deployments (e.g. `RENAME COLUMN query_keyword TO category`) ran on
+every fresh install too, and failed immediately (`column "query_keyword" does not exist` /
+`Cannot find column to rename`) since the fresh-install DDL already creates the new column
+directly. This broke `docker compose up` from a clean volume for anyone who'd never run the
+pipeline before - caught by the Phase 5 CI `compose-smoke` job, not by hand-testing (which only
+ever ran against volumes that already existed from earlier phases).
+
+Fix: both engines' init entrypoints only scan the *top level* of `/docker-entrypoint-initdb.d/`,
+not subdirectories (confirmed empirically) - moving migration-only scripts into
+`sql/postgres/migrations/` and `sql/clickhouse/migrations/` keeps them out of the auto-run path
+while still shipping in the same mounted directory tree for manual application.
 
 ## ClickHouse's `groupArray` silently drops NULLs, desyncing parallel arrays
 

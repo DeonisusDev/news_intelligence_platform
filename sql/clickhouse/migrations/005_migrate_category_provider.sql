@@ -1,7 +1,10 @@
 -- Migration for an already-running deployment (docker-entrypoint-initdb.d scripts only run
--- once, against an empty data directory - see 002_create_raw_articles.sql for the fresh-install
--- shape this brings existing databases in line with).
--- Run manually: docker compose exec clickhouse clickhouse-client --queries-file /docker-entrypoint-initdb.d/005_migrate_category_provider.sql
+-- once, against an empty data directory - see ../002_create_raw_articles.sql for the
+-- fresh-install shape this brings existing databases in line with). Lives in migrations/ (not
+-- directly under sql/clickhouse/) because ClickHouse's init entrypoint only scans the top level
+-- of /docker-entrypoint-initdb.d/, not subdirectories - a fresh install would otherwise try to
+-- rename a column that never existed and fail.
+-- Run manually: docker compose exec clickhouse clickhouse-client --queries-file /docker-entrypoint-initdb.d/migrations/005_migrate_category_provider.sql
 
 ALTER TABLE raw.newsapi_articles RENAME COLUMN query_keyword TO category;
 ALTER TABLE raw.newsapi_articles ADD COLUMN IF NOT EXISTS source_provider Nullable(String) DEFAULT 'newsapi';

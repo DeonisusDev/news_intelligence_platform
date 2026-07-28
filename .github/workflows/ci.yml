@@ -52,6 +52,12 @@ jobs:
           CLICKHOUSE_PORT: "8123"
           CLICKHOUSE_USER: default
           CLICKHOUSE_PASSWORD: clickhouse
+      # profiles.yml is gitignored (it's a real per-deployment file, see dbt/profiles.yml.example) -
+      # a fresh checkout only has the .example, which needs the same env-var-driven copy every
+      # other environment (Airflow's dbt_venv, a contributor's laptop) already relies on.
+      - name: Copy the profiles.yml example into place
+        run: cp profiles.yml.example profiles.yml
+        working-directory: dbt
       - name: dbt build
         working-directory: dbt
         run: >

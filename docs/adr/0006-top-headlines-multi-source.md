@@ -34,10 +34,14 @@ from two different providers.
 
 ## Consequences
 - `raw_articles`/`raw.newsapi_articles` schema change: existing deployments need the migration
-  scripts (`sql/postgres/004_migrate_category_provider.sql`,
-  `sql/clickhouse/005_migrate_category_provider.sql`) since `docker-entrypoint-initdb.d` scripts
-  only run once against an empty volume; fresh installs get the new shape directly from
-  `002_create_raw_articles.sql`.
+  scripts (`sql/postgres/migrations/004_migrate_category_provider.sql`,
+  `sql/clickhouse/migrations/005_migrate_category_provider.sql`) since `docker-entrypoint-initdb.d`
+  scripts only run once against an empty volume; fresh installs get the new shape directly from
+  `002_create_raw_articles.sql`. The migrations live in a `migrations/` subdirectory specifically
+  so they're *not* picked up by that same auto-run mechanism on a fresh install (Postgres's and
+  ClickHouse's init entrypoints only scan the top level of `/docker-entrypoint-initdb.d/`) - they
+  were originally flat alongside the fresh-install DDL, which broke `docker compose up` from a
+  clean volume (caught by the Phase 5 CI `compose-smoke` job).
 - GNews is optional at the config level - `gnews_api_key` defaults to empty, and
   `fetch_gnews_articles` skips cleanly (0 rows, no failure) if unset, so the pipeline still runs
   end-to-end for anyone who hasn't signed up for a GNews key yet.
