@@ -2,16 +2,20 @@
 
 ```mermaid
 flowchart LR
-    A[NewsAPI.org] -->|daily fetch| B[Airflow DAG]
+    A1[NewsAPI.org top-headlines] -->|daily fetch| B[Airflow DAG]
+    A2[GNews.io top-headlines] -->|daily fetch| B
     B --> C[(MinIO raw JSON)]
     C --> D[(Postgres raw_articles)]
     D -->|postgresql table function| E[(ClickHouse raw)]
     E --> F[dbt: stage]
     F --> G[dbt: ods]
     G --> H[dbt: mart]
-    H --> I[LLM enrichment task]
-    I --> J[(ClickHouse summary_articles)]
-    H --> K[FastAPI]
+    H --> M[article clustering]
+    M --> N[(ClickHouse article_clusters)]
+    N --> I[LLM enrichment task]
+    I --> J[(ClickHouse summary_clusters)]
+    H --> K[FastAPI /discover, /stats]
+    N --> K
     J --> K
     D --> L[(Postgres pipeline_run_log)]
     L --> K
