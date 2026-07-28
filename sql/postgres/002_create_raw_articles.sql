@@ -13,9 +13,10 @@ CREATE TABLE IF NOT EXISTS raw_articles (
     url              TEXT NOT NULL,
     url_to_image     TEXT,
     published_at     TIMESTAMPTZ,
-    query_keyword    TEXT,                       -- which NewsAPI query/category first surfaced this article
+    category         TEXT,                       -- top-headlines category this article was fetched under
+    source_provider  TEXT NOT NULL DEFAULT 'newsapi',  -- 'newsapi' | 'gnews'
     fetched_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    raw_payload      JSONB NOT NULL,             -- full original NewsAPI article object, for replay/audit
+    raw_payload      JSONB NOT NULL,             -- full original provider article object, for replay/audit
     -- Airflow's own dag_run.run_id (e.g. "scheduled__2026-07-24T00:00:00+00:00"), not a
     -- synthetic UUID - lets this row be traced directly back to the Airflow UI/CLI.
     ingestion_run_id TEXT NOT NULL,

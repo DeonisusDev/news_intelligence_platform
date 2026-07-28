@@ -21,7 +21,7 @@ _TABLE_FUNCTION = (
 
 _COLUMNS = """
     url_hash, source_id, source_name, author, title, description, content,
-    url, url_to_image, published_at, query_keyword, fetched_at, raw_payload,
+    url, url_to_image, published_at, category, source_provider, fetched_at, raw_payload,
     ingestion_run_id, created_at
 """
 

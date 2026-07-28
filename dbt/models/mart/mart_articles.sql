@@ -10,8 +10,9 @@ select
     a.url_domain,
     a.url_to_image,
     a.published_at,
-    a.query_keyword,
-    d.source_id,
+    a.category,
+    a.source_provider,
+    d.source_id as source_id,
     a.source_name,
     a.fetched_at
 -- ClickHouse requires the alias before FINAL, not after (`table alias FINAL`, not `table FINAL alias`).

@@ -5,15 +5,17 @@ a layered warehouse, enriches them with an LLM, and serves the result through an
 Data Engineering portfolio project — the LLM step is one stage in the pipeline, not the point of it.
 
 ```
-NewsAPI.org → Airflow (daily DAG) → MinIO (raw JSON) → Postgres (raw, idempotent)
+NewsAPI.org + GNews.io (top headlines, all categories) → Airflow (daily DAG)
+   → MinIO (raw JSON) → Postgres (raw, idempotent)
    → dbt-clickhouse (stage → ods → mart) → ClickHouse
-   → article clustering (same story, many outlets) → LLM enrichment
+   → article clustering (same story, many outlets, either provider) → LLM enrichment
    → summary_clusters (ClickHouse) → FastAPI
 ```
 
 See `docs/architecture.md` for a diagram and `docs/adr/` for the reasoning behind the key
 architectural decisions (why LocalExecutor, why ClickHouse, the LLM provider abstraction, the
-dedup/idempotency key, why enrichment runs per story-cluster rather than per article).
+dedup/idempotency key, why enrichment runs per story-cluster rather than per article, why
+ingestion pulls top-headlines across categories from two providers).
 
 ## Status
 
@@ -21,6 +23,7 @@ Under active build-out. Current phase: **Phase 4 — FastAPI serving layer**.
 
 - [x] Phase 0 — docker-compose skeleton, all services healthy (verified: Postgres with `airflow`+`newsdata` DBs, MinIO bucket, ClickHouse `/ping`, Airflow `/api/v2/monitor/health`, FastAPI `/health`)
 - [x] Phase 1 — ingestion DAG (NewsAPI → MinIO → Postgres raw). Verified end-to-end against the real NewsAPI: 153 articles fetched, 136 new rows landed, dedup + idempotency confirmed by rerunning the DAG (second run: 153/153 correctly detected as duplicates, row count unchanged).
+- [x] Ingestion pivot — switched NewsAPI to `/v2/top-headlines` across all categories (was keyword search) and added GNews.io as a second top-headlines provider; `raw_articles` gained `category`/`source_provider` columns. See `docs/adr/0006-top-headlines-multi-source.md`. Verified end-to-end: both providers fetched successfully (NewsAPI across 7 categories, GNews across 9, gracefully absorbing free-tier 429s on individual categories), `dbt build` green (17/17) after migrating the `ods`/`mart` layers to the new columns, clustering + LLM enrichment ran clean over the resulting 380 clusters (605 total after two runs, 0 failures). Also fixed a real bug surfaced by the larger, more varied article volume: `groupArray` silently dropping NULL `description`s desynced per-cluster article arrays for ~4% of clusters (see `docs/troubleshooting.md`).
 - [x] Phase 2 — dbt-clickhouse (stage → ods → mart), Postgres → ClickHouse raw via the `postgresql()` table function. Verified end-to-end: `dbt build` green (17/17, incl. `unique`/`not_null` on `url_hash`), full DAG run populates `raw`/`ods`/`mart` consistently (56/56/56 rows), idempotency confirmed by rerunning the DAG (0 new rows copied into ClickHouse, all layer counts unchanged).
 - [x] Phase 3 — article clustering (title-token similarity, no LLM) → LLM enrichment → `summary_clusters`. Verified end-to-end against the real OpenRouter API: 159 clusters summarized (0 failures), confirmed clustering correctly groups the same story across outlets (e.g. Forbes + its Biztoc.com syndication landed in one cluster). Idempotency confirmed by rerunning the DAG after new articles arrived: only the 66 genuinely new clusters were processed, all 159 previously-summarized clusters were skipped and their `cluster_id`s stayed stable.
 - [ ] Phase 4 — FastAPI serving layer
@@ -33,13 +36,15 @@ Under active build-out. Current phase: **Phase 4 — FastAPI serving layer**.
   scheduler, dag-processor, triggerer) alongside Postgres, ClickHouse, MinIO, and FastAPI. On a
   constrained machine, close other memory-heavy applications before `docker compose up`.
 - A free [NewsAPI.org](https://newsapi.org) API key
+- A free [GNews.io](https://gnews.io) API key (optional - ingestion runs fine without it, just
+  skips that provider)
 - A free [OpenRouter](https://openrouter.ai) API key (for LLM enrichment)
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# fill in NEWSAPI_API_KEY, OPENROUTER_API_KEY
+# fill in NEWSAPI_API_KEY, OPENROUTER_API_KEY (GNEWS_API_KEY is optional)
 # generate a Fernet key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
 make up      # docker compose up -d --build
@@ -57,6 +62,8 @@ make ps      # check all services are healthy
 - **NewsAPI free tier**: 100 requests/day (shared across dev + testing), articles delayed ~24h,
   `content` field truncated to ~260 characters, ToS restricts use to dev/test — not a production
   data source, and the ingestion DAG budgets its request count accordingly.
+- **GNews free tier**: 100 requests/day, max 10 articles per request, and pagination is a
+  paid-only feature — `gnews_client.py` makes exactly one request per category, no page loop.
 - **Free OpenRouter models**: response quality and structured-output support are inconsistent;
   the enrichment client validates and retries rather than trusting the model unconditionally.
 - **ClickHouse at this data volume** (hundreds of articles/day) is a deliberate choice to

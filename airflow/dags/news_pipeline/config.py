@@ -15,8 +15,11 @@ from airflow.models import Variable
 @dataclass(frozen=True)
 class Settings:
     newsapi_api_key: str
-    newsapi_queries: list[str]
+    newsapi_categories: list[str]
     newsapi_max_requests_per_run: int
+    gnews_api_key: str
+    gnews_categories: list[str]
+    gnews_max_requests_per_run: int
     minio_bucket: str
     openrouter_api_key: str
     openrouter_base_url: str
@@ -31,12 +34,25 @@ class Settings:
 def get_settings() -> Settings:
     return Settings(
         newsapi_api_key=Variable.get("newsapi_api_key"),
-        newsapi_queries=[
-            q.strip()
-            for q in Variable.get("newsapi_queries", default_var="technology,business").split(",")
-            if q.strip()
+        newsapi_categories=[
+            c.strip()
+            for c in Variable.get(
+                "newsapi_categories",
+                default_var="business,entertainment,general,health,science,sports,technology",
+            ).split(",")
+            if c.strip()
         ],
         newsapi_max_requests_per_run=int(Variable.get("newsapi_max_requests_per_run", default_var="20")),
+        gnews_api_key=Variable.get("gnews_api_key", default_var=""),
+        gnews_categories=[
+            c.strip()
+            for c in Variable.get(
+                "gnews_categories",
+                default_var="general,world,nation,business,technology,entertainment,science,health,sports",
+            ).split(",")
+            if c.strip()
+        ],
+        gnews_max_requests_per_run=int(Variable.get("gnews_max_requests_per_run", default_var="20")),
         minio_bucket=Variable.get("minio_bucket"),
         openrouter_api_key=Variable.get("openrouter_api_key"),
         openrouter_base_url=Variable.get("openrouter_base_url"),

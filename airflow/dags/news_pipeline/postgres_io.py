@@ -2,6 +2,11 @@
 
 Dedup semantics: first-seen-wins. ON CONFLICT (url_hash) DO NOTHING keeps raw_articles
 immutable and lets the caller count new-vs-duplicate rows from the returned inserted count.
+
+Two providers (NewsAPI, GNews) feed this same table - each has a slightly different article
+shape (e.g. GNews has no source.id/author, and calls the image field "image" not "urlToImage"),
+so _extract_common_fields() normalizes both into one row shape before insert. raw_payload still
+stores the untouched provider-native JSON for replay/audit.
 """
 from __future__ import annotations
 
@@ -18,37 +23,67 @@ NEWSDATA_CONN_ID = "newsdata_pg"
 _INSERT_SQL = """
 INSERT INTO raw_articles (
     url_hash, source_id, source_name, author, title, description, content,
-    url, url_to_image, published_at, query_keyword, fetched_at, raw_payload, ingestion_run_id
+    url, url_to_image, published_at, category, source_provider, fetched_at,
+    raw_payload, ingestion_run_id
 ) VALUES %s
 ON CONFLICT (url_hash) DO NOTHING
 RETURNING url_hash
 """
 
 
-def upsert_articles(query_article_pairs: list[tuple[str, dict]], ingestion_run_id: str) -> tuple[int, int]:
-    """Returns (rows_new, rows_duplicate)."""
-    if not query_article_pairs:
+def _extract_common_fields(provider: str, article: dict) -> dict:
+    source = article.get("source") or {}
+    if provider == "gnews":
+        return {
+            "source_id": None,
+            "source_name": source.get("name"),
+            "author": None,
+            "title": article.get("title"),
+            "description": article.get("description"),
+            "content": article.get("content"),
+            "url": article.get("url"),
+            "url_to_image": article.get("image"),
+            "published_at": article.get("publishedAt"),
+        }
+    return {
+        "source_id": source.get("id"),
+        "source_name": source.get("name"),
+        "author": article.get("author"),
+        "title": article.get("title"),
+        "description": article.get("description"),
+        "content": article.get("content"),
+        "url": article.get("url"),
+        "url_to_image": article.get("urlToImage"),
+        "published_at": article.get("publishedAt"),
+    }
+
+
+def upsert_articles(
+    items: list[tuple[str, str, dict]], ingestion_run_id: str
+) -> tuple[int, int]:
+    """`items` is a list of (provider, category, article) tuples. Returns (rows_new, rows_duplicate)."""
+    if not items:
         return 0, 0
 
     fetched_at = datetime.now(timezone.utc)
     rows = []
-    for query, article in query_article_pairs:
-        url = article.get("url")
-        if not url:
+    for provider, category, article in items:
+        fields = _extract_common_fields(provider, article)
+        if not fields["url"]:
             continue
-        source = article.get("source") or {}
         rows.append((
-            url_hash(url),
-            source.get("id"),
-            source.get("name"),
-            article.get("author"),
-            article.get("title"),
-            article.get("description"),
-            article.get("content"),
-            url,
-            article.get("urlToImage"),
-            article.get("publishedAt"),
-            query,
+            url_hash(fields["url"]),
+            fields["source_id"],
+            fields["source_name"],
+            fields["author"],
+            fields["title"],
+            fields["description"],
+            fields["content"],
+            fields["url"],
+            fields["url_to_image"],
+            fields["published_at"],
+            category,
+            provider,
             fetched_at,
             json.dumps(article, ensure_ascii=False),
             ingestion_run_id,

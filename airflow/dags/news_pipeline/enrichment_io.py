@@ -20,9 +20,10 @@ log = logging.getLogger(__name__)
 _SELECT_PENDING_SQL = """
 select
     c.cluster_id,
-    groupArray(a.title) as titles,
-    groupArray(a.description) as descriptions,
-    groupArray(a.source_name) as sources
+    -- groupArray on a Nullable(String) column silently drops NULL entries, which desyncs
+    -- separate title/description/source groupArrays whenever any member has a NULL field
+    -- (e.g. no description) - grouping as one tuple per row keeps them aligned.
+    groupArray((a.title, a.description, a.source_name)) as members
 from mart.article_clusters c
 inner join mart.mart_articles a on a.url_hash = c.url_hash
 where c.cluster_id not in (
@@ -49,10 +50,10 @@ def enrich_pending_clusters(*, api_key: str, base_url: str, model: str) -> tuple
 
     succeeded = 0
     failed = 0
-    for i, (cluster_id, titles, descriptions, sources) in enumerate(pending, start=1):
+    for i, (cluster_id, members) in enumerate(pending, start=1):
         articles = [
             ClusterArticle(title=t, description=d, source_name=s)
-            for t, d, s in zip(titles, descriptions, sources)
+            for t, d, s in members
         ]
         enriched_at = datetime.now(timezone.utc)
         try:

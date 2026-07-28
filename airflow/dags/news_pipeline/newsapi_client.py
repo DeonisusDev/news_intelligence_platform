@@ -1,4 +1,8 @@
-"""Thin client for NewsAPI.org's /v2/everything endpoint.
+"""Thin client for NewsAPI.org's /v2/top-headlines endpoint.
+
+Pulls top/main headlines across a fixed set of categories (business, technology, ...) rather
+than keyword search - this is meant to feed a general-interest Discovery-style feed, not a
+tech-news filter. See docs/adr/0006-top-headlines-multi-source.md.
 
 Free Developer tier constraints this is designed around (not silently ignored):
 100 requests/day total (shared with manual testing), ~24h publication delay, and the
@@ -13,19 +17,19 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-NEWSAPI_BASE_URL = "https://newsapi.org/v2/everything"
-PAGE_SIZE = 20
+NEWSAPI_BASE_URL = "https://newsapi.org/v2/top-headlines"
+PAGE_SIZE = 100
 
 
 @dataclass
 class FetchResult:
-    query: str
+    category: str
     articles: list[dict]
     requests_used: int
 
 
-def fetch_articles_for_query(api_key: str, query: str, max_requests: int) -> FetchResult:
-    """Fetch up to `max_requests` pages of articles for a single query term."""
+def fetch_articles_for_category(api_key: str, category: str, max_requests: int) -> FetchResult:
+    """Fetch up to `max_requests` pages of top headlines for a single category."""
     articles: list[dict] = []
     requests_used = 0
 
@@ -33,9 +37,8 @@ def fetch_articles_for_query(api_key: str, query: str, max_requests: int) -> Fet
         response = requests.get(
             NEWSAPI_BASE_URL,
             params={
-                "q": query,
+                "category": category,
                 "language": "en",
-                "sortBy": "publishedAt",
                 "pageSize": PAGE_SIZE,
                 "page": page,
             },
@@ -46,8 +49,8 @@ def fetch_articles_for_query(api_key: str, query: str, max_requests: int) -> Fet
 
         if response.status_code != 200:
             logger.warning(
-                "NewsAPI request failed query=%s page=%s status=%s body=%s",
-                query, page, response.status_code, response.text[:500],
+                "NewsAPI request failed category=%s page=%s status=%s body=%s",
+                category, page, response.status_code, response.text[:500],
             )
             break
 
@@ -59,24 +62,24 @@ def fetch_articles_for_query(api_key: str, query: str, max_requests: int) -> Fet
         if len(page_articles) < PAGE_SIZE or page * PAGE_SIZE >= total_results:
             break
 
-    return FetchResult(query=query, articles=articles, requests_used=requests_used)
+    return FetchResult(category=category, articles=articles, requests_used=requests_used)
 
 
-def fetch_articles(api_key: str, queries: list[str], max_requests_per_run: int) -> list[tuple[str, dict]]:
-    """Fetch articles across all configured queries, respecting a total request budget
-    for the whole run (not per query). Returns a list of (query, article) pairs.
+def fetch_articles(api_key: str, categories: list[str], max_requests_per_run: int) -> list[tuple[str, dict]]:
+    """Fetch top headlines across all configured categories, respecting a total request budget
+    for the whole run (not per category). Returns a list of (category, article) pairs.
     """
     results: list[tuple[str, dict]] = []
     requests_remaining = max_requests_per_run
 
-    for query in queries:
+    for category in categories:
         if requests_remaining <= 0:
-            logger.info("Request budget exhausted, skipping remaining queries")
+            logger.info("Request budget exhausted, skipping remaining categories")
             break
 
-        result = fetch_articles_for_query(api_key, query, max_requests=requests_remaining)
+        result = fetch_articles_for_category(api_key, category, max_requests=requests_remaining)
         requests_remaining -= result.requests_used
         for article in result.articles:
-            results.append((query, article))
+            results.append((category, article))
 
     return results

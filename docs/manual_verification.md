@@ -115,7 +115,7 @@ raw NewsAPI response payloads.
 ```bash
 docker compose exec postgres psql -U airflow -d newsdata -c "SELECT count(*) FROM raw_articles;"
 docker compose exec postgres psql -U airflow -d newsdata -c \
-  "SELECT source_name, title, query_keyword, published_at FROM raw_articles ORDER BY fetched_at DESC LIMIT 5;"
+  "SELECT source_name, title, category, source_provider, published_at FROM raw_articles ORDER BY fetched_at DESC LIMIT 5;"
 ```
 
 **Pipeline run log** — this is the custom observability table, independent of Airflow's own UI:

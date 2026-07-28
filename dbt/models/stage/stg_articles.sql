@@ -13,7 +13,8 @@ select
     domain(url) as url_domain,
     url_to_image,
     published_at,
-    query_keyword,
+    category,
+    source_provider,
     fetched_at,
     ingestion_run_id
 from {{ source('raw', 'newsapi_articles') }} final

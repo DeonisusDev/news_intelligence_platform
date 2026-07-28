@@ -72,3 +72,33 @@ Fix: point dbt's run artifacts at the container's own filesystem instead of the 
 the `--log-path`/`--target-path` CLI flags (e.g. `/tmp/dbt_logs`, `/tmp/dbt_target`) - `models/`
 still comes from the host bind mount, only the ephemeral run output moves. (Setting these as
 `log-path`/`target-path` keys in `dbt_project.yml` also works but is deprecated in dbt 1.12+.)
+
+## dbt `incremental` models don't auto-migrate their physical schema
+
+Renaming/adding a column in an upstream model's `select *` doesn't reach a downstream
+`materialized='incremental'` model's actual ClickHouse table - dbt's incremental strategies
+(`delete+insert` here) `INSERT INTO` the *existing* table, so a column the existing table
+doesn't have yet causes `DB::Exception: Unknown expression identifier 'old_column_name'`
+(the new SELECT no longer produces it) the next time the model runs. This bit `ods_articles`
+after renaming `query_keyword` -> `category` in `stg_articles.sql` - `mart_articles` (materialized
+as `table`, a full drop-and-recreate every run) picked up the new column automatically, but
+`ods_articles` didn't.
+
+Fix: `ALTER TABLE ... RENAME COLUMN` / `ADD COLUMN` the existing incremental table by hand to
+match the new upstream shape (see `sql/clickhouse/005_migrate_category_provider.sql`) - or, if
+the data is fully disposable, drop the table and let dbt do a full rebuild on the next run.
+
+## ClickHouse's `groupArray` silently drops NULLs, desyncing parallel arrays
+
+`groupArray(a.title)`, `groupArray(a.description)`, `groupArray(a.source_name)` computed
+side-by-side in one `GROUP BY` look like they'd zip back up positionally, but `groupArray` on a
+`Nullable(String)` column skips NULL values entirely - so if even one row in the group has a NULL
+`description`, that array comes back shorter than `titles`/`sources`, and zipping them in Python
+silently truncates to the shortest array (occasionally to *zero* elements, discarding the whole
+group). This broke `enrichment_io.py`'s per-cluster article gathering for ~4% of clusters
+(any cluster containing an article with a NULL field), producing "successful" LLM summaries
+generated from zero actual articles.
+
+Fix: `groupArray((a.title, a.description, a.source_name))` - group the columns as one tuple per
+row instead of three separate arrays. `groupArray` never drops a NULL that's *inside* a tuple,
+only bare NULL scalars, so tuples keep their 1:1 correspondence to source rows.
