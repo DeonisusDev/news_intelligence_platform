@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from .clickhouse_hook import ClickHouseHook
 from .llm_client import ClusterArticle, enrich_cluster
 
 log = logging.getLogger(__name__)
@@ -48,10 +47,19 @@ _INSERT_COLUMNS = [
 ]
 
 
-def enrich_pending_clusters(*, api_key: str, base_url: str, model: str) -> tuple[int, int, int]:
+def enrich_pending_clusters(
+    *, api_key: str, base_url: str, model: str, client=None
+) -> tuple[int, int, int]:
     """Returns (attempted, succeeded, failed). Never raises for per-cluster failures - the
-    caller decides whether the failure rate is acceptable."""
-    client = ClickHouseHook().get_client()
+    caller decides whether the failure rate is acceptable.
+
+    `client` is injectable (defaults to a real ClickHouseHook client) so tests can pass a fake
+    without needing Airflow installed - see clustering_io.compute_clusters for the same pattern.
+    """
+    if client is None:
+        from .clickhouse_hook import ClickHouseHook
+
+        client = ClickHouseHook().get_client()
     pending = client.query(_SELECT_PENDING_SQL).result_rows
     if not pending:
         return 0, 0, 0

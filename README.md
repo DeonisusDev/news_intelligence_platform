@@ -102,4 +102,7 @@ dbt/         dbt-clickhouse project: stage → ods → mart
 fastapi_app/ Serving API over ClickHouse (articles, stats) and Postgres (pipeline run history)
 sql/         Hand-written DDL for Postgres and ClickHouse init tables
 docs/        Architecture diagram + ADRs
+tests/       Unit tests for news_pipeline (dedup, clustering, LLM parsing, Postgres upsert) and
+             fastapi_app (endpoint tests via TestClient + dependency overrides) - `pytest -v`,
+             no Airflow/real DB required (see requirements-dev.txt)
 ```

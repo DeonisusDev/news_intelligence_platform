@@ -1,0 +1,13 @@
+# Test-only dependencies for `pytest` (see tests/). Deliberately doesn't include apache-airflow:
+# the news_pipeline modules under test have their Airflow-hook imports pushed inside the
+# functions that need them specifically so pure logic stays testable without it (see e.g.
+# clustering_io.compute_clusters's `client` parameter docstring).
+pytest
+httpx
+fastapi
+pydantic-settings
+clickhouse-connect
+psycopg2-binary
+openai
+pydantic
+tenacity

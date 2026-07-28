@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg2.extras import execute_values
 
 from .dedup import url_hash
@@ -59,10 +58,14 @@ def _extract_common_fields(provider: str, article: dict) -> dict:
     }
 
 
-def upsert_articles(items: list[tuple[str, str, dict]], ingestion_run_id: str) -> tuple[int, int]:
+def upsert_articles(
+    items: list[tuple[str, str, dict]], ingestion_run_id: str, conn=None
+) -> tuple[int, int]:
     """`items` is a list of (provider, category, article) tuples.
 
-    Returns (rows_new, rows_duplicate).
+    Returns (rows_new, rows_duplicate). `conn` is injectable (defaults to a real PostgresHook
+    connection) so tests can pass a fake without needing Airflow installed - the import is
+    local to keep this module importable on its own for unit-testing _extract_common_fields.
     """
     if not items:
         return 0, 0
@@ -93,15 +96,19 @@ def upsert_articles(items: list[tuple[str, str, dict]], ingestion_run_id: str) -
             )
         )
 
-    hook = PostgresHook(postgres_conn_id=NEWSDATA_CONN_ID)
-    conn = hook.get_conn()
+    owns_conn = conn is None
+    if owns_conn:
+        from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+        conn = PostgresHook(postgres_conn_id=NEWSDATA_CONN_ID).get_conn()
     try:
         with conn.cursor() as cur:
             inserted = execute_values(cur, _INSERT_SQL, rows, fetch=True)
             rows_new = len(inserted)
         conn.commit()
     finally:
-        conn.close()
+        if owns_conn:
+            conn.close()
 
     rows_duplicate = len(rows) - rows_new
     return rows_new, rows_duplicate

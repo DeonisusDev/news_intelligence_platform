@@ -13,3 +13,11 @@ ignore = [
     # as a general "don't call functions in defaults" antipattern doesn't apply here.
     "B008",
 ]
+
+[tool.pytest.ini_options]
+# Mirrors how each half of the codebase is actually deployed: news_pipeline/ is imported as a
+# package from Airflow's dags folder, fastapi_app's own files are copied flat into /app with no
+# wrapping package (see fastapi_app/Dockerfile) - adding both directories here (rather than
+# fastapi_app.main) matches that layout instead of fighting it.
+pythonpath = ["airflow/dags", "fastapi_app"]
+testpaths = ["tests"]

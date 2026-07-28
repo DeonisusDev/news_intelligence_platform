@@ -17,8 +17,6 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from .clickhouse_hook import ClickHouseHook
-
 # clickhouse-connect returns ClickHouse's DateTime columns as naive datetimes (ClickHouse's
 # DateTime type carries no tz info) - keep comparisons naive too, only using timezone.utc for
 # the (unrelated) computed_at write-timestamp below.
@@ -108,10 +106,18 @@ class _UnionFind:
             self.parent[ra] = rb
 
 
-def compute_clusters() -> int:
+def compute_clusters(client=None) -> int:
     """Recomputes clusters over all mart_articles and writes assignments into
-    mart.article_clusters. Returns the number of (article, cluster) rows written."""
-    client = ClickHouseHook().get_client()
+    mart.article_clusters. Returns the number of (article, cluster) rows written.
+
+    `client` is injectable (defaults to a real ClickHouseHook client) so tests can pass a fake
+    without needing Airflow installed - the import is local to keep this module importable on
+    its own for unit-testing the pure clustering logic above.
+    """
+    if client is None:
+        from .clickhouse_hook import ClickHouseHook
+
+        client = ClickHouseHook().get_client()
     rows = client.query(_SELECT_ARTICLES_SQL).result_rows
     if not rows:
         return 0

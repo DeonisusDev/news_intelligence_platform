@@ -20,6 +20,18 @@ jobs:
       - name: black --check
         run: black --check airflow/dags fastapi_app scripts
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+      - name: pytest
+        run: pytest -v
+
   dbt-build:
     runs-on: ubuntu-latest
     services:
