@@ -106,6 +106,20 @@ not subdirectories (confirmed empirically) - moving migration-only scripts into
 `sql/postgres/migrations/` and `sql/clickhouse/migrations/` keeps them out of the auto-run path
 while still shipping in the same mounted directory tree for manual application.
 
+## `docker compose up --wait` fails on a legitimate one-shot container
+
+`--wait` treats *any* container that reaches `Exited`, even with exit code 0, as a failure -
+unless some other service declares a `depends_on: {condition: service_completed_successfully}`
+on it, which tells compose that container is *supposed* to finish. `minio-createbuckets`
+(`restart: "no"`, exits once the bucket exists) has no such dependent, so `--wait` reported
+`container ... exited (0)` and returned exit code 1 even though nothing was actually wrong -
+first caught by the Phase 5 CI `compose-smoke` job, then reproduced locally against the
+already-running dev stack (harmless to re-run: `docker compose up -d --wait` again).
+
+Fix: don't use `--wait` for this compose file. `docker compose up -d` plus a manual poll loop
+against the documented health endpoints (`/api/v2/monitor/health`, `/ping`, `/health`) gets the
+same guarantee without depending on `--wait`'s all-or-nothing exited-container semantics.
+
 ## ClickHouse's `groupArray` silently drops NULLs, desyncing parallel arrays
 
 `groupArray(a.title)`, `groupArray(a.description)`, `groupArray(a.source_name)` computed

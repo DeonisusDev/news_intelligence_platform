@@ -78,13 +78,30 @@ jobs:
         run: python3 scripts/generate_ci_env.py
       - name: Validate compose file
         run: docker compose config -q
-      - name: Bring the stack up and wait for every healthcheck
-        run: docker compose up -d --wait --wait-timeout 300
-      - name: Check every documented health endpoint
+      - name: Bring the stack up
+        run: docker compose up -d
+      # `docker compose up --wait` isn't used here: it treats *any* Exited container as a
+      # failure, including minio-createbuckets, which is a legitimate one-shot job (restart:
+      # "no", exits 0 once the bucket exists) that nothing else declares a
+      # service_completed_successfully dependency on. Polling the documented health endpoints
+      # directly sidesteps that --wait semantics gotcha entirely.
+      - name: Wait for every documented health endpoint
         run: |
-          curl -sf http://localhost:8080/api/v2/monitor/health
-          curl -sf http://localhost:8123/ping
-          curl -sf http://localhost:8000/health
+          wait_for() {
+            local name=$1 url=$2
+            for i in $(seq 1 60); do
+              if curl -sf "$url" >/dev/null 2>&1; then
+                echo "$name is up"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "$name never became reachable at $url" >&2
+            return 1
+          }
+          wait_for airflow http://localhost:8080/api/v2/monitor/health
+          wait_for clickhouse http://localhost:8123/ping
+          wait_for fastapi http://localhost:8000/health
       - name: Dump logs on failure
         if: failure()
         run: docker compose logs --tail=200
