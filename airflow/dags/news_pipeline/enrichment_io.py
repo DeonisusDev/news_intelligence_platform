@@ -24,7 +24,7 @@ select
     -- separate title/description/source groupArrays whenever any member has a NULL field
     -- (e.g. no description) - grouping as one tuple per row keeps them aligned.
     groupArray((a.title, a.description, a.source_name)) as members
-from mart.article_clusters c
+from mart.article_clusters c final
 inner join mart.mart_articles a on a.url_hash = c.url_hash
 where c.cluster_id not in (
     select cluster_id from mart.summary_clusters final where enrichment_status = 'success'

@@ -102,3 +102,20 @@ generated from zero actual articles.
 Fix: `groupArray((a.title, a.description, a.source_name))` - group the columns as one tuple per
 row instead of three separate arrays. `groupArray` never drops a NULL that's *inside* a tuple,
 only bare NULL scalars, so tuples keep their 1:1 correspondence to source rows.
+
+## Forgetting `FINAL` on `article_clusters` double-counted articles mid-session
+
+`enrichment_io.py`'s pending-clusters query joined `mart.article_clusters` without `FINAL`, even
+though it's a `ReplacingMergeTree` like every other table in this pipeline that needs it
+(`raw.newsapi_articles`, `ods_articles`, ...). Re-running `cluster_articles` more than once in a
+short window (e.g. while debugging) leaves multiple un-merged versions of the same `url_hash`
+physically present until ClickHouse's background merge catches up - querying without `FINAL`
+during that window silently doubled some clusters' member arrays, inflating `article_count` and
+feeding the LLM the same article twice in one prompt. Found by spot-checking a cluster's actual
+member articles in DBeaver and noticing `article_count` didn't match the real row count.
+
+Fix: add `final` after the table alias (`from mart.article_clusters c final`) like everywhere
+else. 127 already-affected `summary_clusters` rows (verified via `uniqExact(url_hash)` against
+the `FINAL`-deduped join not matching the stored `article_count`) were deleted and re-enriched
+rather than patched in place - cheap on a free LLM tier and consistent with ADR 0005's existing
+"stale cluster row -> delete and rerun" recovery pattern.
