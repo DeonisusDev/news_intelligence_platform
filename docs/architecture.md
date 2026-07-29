@@ -19,6 +19,11 @@ flowchart LR
     J --> K
     D --> L[(Postgres pipeline_run_log)]
     L --> K
+    K --> P[React SPA :3000]
 ```
+
+The frontend (`frontend/`) is a Vite + React + TypeScript SPA served by nginx, calling the
+FastAPI endpoints directly from the browser (CORS-enabled). It renders one card per
+story-cluster with an expandable source list - see `docs/adr/0007-frontend-spa.md`.
 
 This file is kept short deliberately during initial build-out; it should be filled in with a full narrative (data flow rationale, layer responsibilities, scaling notes) once the pipeline is complete (Phase 5). See `docs/adr/` for the reasoning behind individual architectural decisions.

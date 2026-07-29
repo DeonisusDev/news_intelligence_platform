@@ -18,6 +18,8 @@ class SummaryCard(BaseModel):
     keywords: list[str]
     article_count: int
     enriched_at: datetime
+    first_published_at: datetime
+    image_url: str | None
 
 
 class SourceArticle(BaseModel):

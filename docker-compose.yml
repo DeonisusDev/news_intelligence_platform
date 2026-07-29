@@ -178,6 +178,7 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB}
       NEWSDATA_PG_DSN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${NEWSDATA_DB}
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -185,6 +186,24 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Browser-side, so this must be reachable from the *host*, not the Docker network
+        # (fastapi:8000 would resolve inside other containers but not in the user's browser).
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:80"
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
       interval: 10s
       timeout: 5s
       retries: 5

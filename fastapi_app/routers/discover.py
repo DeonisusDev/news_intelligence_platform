@@ -13,19 +13,39 @@ from schemas import SourceArticle, SummaryCard, SummaryDetail
 router = APIRouter(prefix="/discover", tags=["discover"])
 
 _CARD_COLUMNS = (
-    "cluster_id, summary, topic, sentiment, sentiment_score, keywords, article_count, enriched_at"
+    "c.cluster_id, c.summary, c.topic, c.sentiment, c.sentiment_score, c.keywords, "
+    "c.article_count, c.enriched_at, m.first_published_at, m.image_url"
 )
 
+# Feed cards need a representative image and the earliest source's published_at (for a
+# "published X ago" hero) up front, without a per-card detail round-trip - computed once per
+# cluster_id here and joined onto summary_clusters, rather than N+1 detail fetches from the feed.
+_CLUSTER_MEDIA_CTE = """
+with cluster_media as (
+    select
+        ac.cluster_id,
+        min(a.published_at) as first_published_at,
+        any(a.url_to_image) as image_url
+    from mart.article_clusters ac final
+    inner join mart.mart_articles a on a.url_hash = ac.url_hash
+    group by ac.cluster_id
+)
+"""
+
 _LIST_SQL_BASE = f"""
+{_CLUSTER_MEDIA_CTE}
 select {_CARD_COLUMNS}
-from mart.summary_clusters final
-where enrichment_status = 'success'
+from mart.summary_clusters c final
+inner join cluster_media m on m.cluster_id = c.cluster_id
+where c.enrichment_status = 'success'
 """
 
 _DETAIL_SQL = f"""
+{_CLUSTER_MEDIA_CTE}
 select {_CARD_COLUMNS}
-from mart.summary_clusters final
-where enrichment_status = 'success' and cluster_id = {{cluster_id:String}}
+from mart.summary_clusters c final
+inner join cluster_media m on m.cluster_id = c.cluster_id
+where c.enrichment_status = 'success' and c.cluster_id = {{cluster_id:String}}
 """
 
 _SOURCES_SQL = """
@@ -47,6 +67,8 @@ def _row_to_card(row: tuple) -> SummaryCard:
         keywords=row[5],
         article_count=row[6],
         enriched_at=row[7],
+        first_published_at=row[8],
+        image_url=row[9],
     )
 
 
@@ -60,9 +82,9 @@ def list_summary_cards(
     sql = _LIST_SQL_BASE
     params: dict = {"limit": limit, "offset": offset}
     if topic:
-        sql += " and topic = {topic:String}"
+        sql += " and c.topic = {topic:String}"
         params["topic"] = topic
-    sql += " order by enriched_at desc limit {limit:UInt32} offset {offset:UInt32}"
+    sql += " order by c.enriched_at desc limit {limit:UInt32} offset {offset:UInt32}"
 
     rows = client.query(sql, parameters=params).result_rows
     return [_row_to_card(row) for row in rows]

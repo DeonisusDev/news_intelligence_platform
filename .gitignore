@@ -15,3 +15,6 @@ airflow/plugins/__pycache__/
 minio_data/
 postgres_data/
 clickhouse_data/
+
+# Reference screenshots (e.g. competitor UI comparisons) - local design reference only.
+screenshots/

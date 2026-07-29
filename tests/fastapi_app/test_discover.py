@@ -11,6 +11,8 @@ CARD_ROW = (
     ["ai", "chips"],
     2,
     "2026-07-28T10:00:00",
+    "2026-07-26T12:00:00",
+    "https://forbes.com/img.jpg",
 )
 
 SOURCE_ROWS = [

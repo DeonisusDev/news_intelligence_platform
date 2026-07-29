@@ -11,7 +11,7 @@ NewsAPI.org + GNews.io (top headlines, all categories) → Airflow (daily DAG)
    → MinIO (raw JSON) → Postgres (raw, idempotent)
    → dbt-clickhouse (stage → ods → mart) → ClickHouse
    → article clustering (same story, many outlets, either provider) → LLM enrichment
-   → summary_clusters (ClickHouse) → FastAPI
+   → summary_clusters (ClickHouse) → FastAPI → React SPA (frontend/)
 ```
 
 See `docs/architecture.md` for a diagram and `docs/adr/` for the reasoning behind the key
@@ -21,9 +21,10 @@ ingestion pulls top-headlines across categories from two providers).
 
 ## Status
 
-All planned phases (0-5) complete. See `docs/adr/` and `docs/troubleshooting.md` for the reasoning
-and real bugs hit along the way; future work would be product-driven (e.g. the recommendation
-system sketched in earlier product-vision discussions) rather than a fixed phase.
+Phases 0-5 complete, plus a post-Phase-5 unit test suite and Phase 6 (web frontend). See
+`docs/adr/` and `docs/troubleshooting.md` for the reasoning and real bugs hit along the way.
+Remaining phases (6.1, 6.5, 7-13) are sketched in the plan's future-phases section - user
+accounts, a richer per-event detail view, recommendations, and beyond.
 
 - [x] Phase 0 — docker-compose skeleton, all services healthy (verified: Postgres with `airflow`+`newsdata` DBs, MinIO bucket, ClickHouse `/ping`, Airflow `/api/v2/monitor/health`, FastAPI `/health`)
 - [x] Phase 1 — ingestion DAG (NewsAPI → MinIO → Postgres raw). Verified end-to-end against the real NewsAPI: 153 articles fetched, 136 new rows landed, dedup + idempotency confirmed by rerunning the DAG (second run: 153/153 correctly detected as duplicates, row count unchanged).
@@ -33,6 +34,7 @@ system sketched in earlier product-vision discussions) rather than a fixed phase
 - [x] Phase 4 — FastAPI serving layer. Discovery-feed shaped: `GET /discover` (paginated summary cards, optional `topic` filter), `GET /discover/{cluster_id}` (card + full source-article list, 404 on unknown id), `GET /stats/daily`, `GET /stats/topics`, `GET /pipeline/runs` (Postgres `pipeline_run_log`, independent of the Airflow UI). Verified against the live stack: all endpoints return real joined data, `/docs` Swagger UI works, 404 path confirmed, detail endpoint spot-checked against the corrected Forbes/Biztoc.com cluster (`article_count: 2`, both sources listed correctly).
 - [x] Phase 5 — CI, docs polish. `.github/workflows/ci.yml`: `lint` (`ruff check` + `black --check`), `test` (66 unit tests over `news_pipeline` + `fastapi_app`, no Airflow/real DB needed), `dbt-build` (real ClickHouse service container, fresh-install DDL, genuine `dbt build`, not just compile), `compose-smoke` (`docker compose config -q` + `up -d` + a health-endpoint poll loop). All four green on GitHub Actions. Getting there caught two real, previously-unnoticed bugs: migration scripts living directly under `sql/postgres|clickhouse/` were auto-executed by `docker-entrypoint-initdb.d` on a *fresh* install too (breaking `docker compose up` from a clean volume for anyone who'd never run the pipeline before - fixed by moving them into `migrations/` subdirectories, which both engines' init entrypoints don't scan), and `docker compose up --wait` failing on `minio-createbuckets`, a legitimate one-shot job (see `docs/troubleshooting.md` for both). Architecture diagram and sample API calls added to this README.
 - [x] Post-Phase-5 — unit test suite. `tests/`: `news_pipeline` (dedup, clustering, LLM response parsing, Postgres upsert/field-normalization) and `fastapi_app` (every endpoint via `TestClient` + dependency overrides). Required a small, behavior-preserving refactor - `compute_clusters`/`enrich_pending_clusters`/`upsert_articles` each gained an injectable `client`/`conn` parameter so their Airflow-hook imports could move inside the function body, making the modules importable (and their logic testable) without `apache-airflow` installed.
+- [x] Phase 6 — web frontend. `frontend/`: Vite + React + TypeScript + Tailwind + shadcn/ui SPA served by nginx. One card per story-cluster (hero image, TL;DR, topic + heuristic consensus badges), infinite-scroll feed (TanStack Query), click-to-expand source list (Dialog), topic filter tucked behind a dropdown (styled after Perplexity Discover's own layout), dark mode. FastAPI gained CORS middleware and `GET /discover` gained `first_published_at`/`image_url` per card. See `docs/adr/0007-frontend-spa.md`. Verified against the live stack in a real (headless) browser: real data end-to-end, dialog expand, dark mode + persistence, mobile-width layout, infinite scroll (20→100 cards over repeated scrolls), topic filter, zero console errors.
 
 ## Prerequisites
 
@@ -56,6 +58,7 @@ make up      # docker compose up -d --build
 make ps      # check all services are healthy
 ```
 
+- Frontend: http://localhost:3000 — the Discovery-style feed
 - Airflow UI: http://localhost:8080 (SimpleAuthManager, all-admins mode — no login required; dev-only setting, see `docker-compose.yml`)
 - MinIO console: http://localhost:9001 (credentials from `.env`)
 - Airflow health check: http://localhost:8080/api/v2/monitor/health
@@ -101,6 +104,7 @@ curl "http://localhost:8000/pipeline/runs?limit=10"
 airflow/     Airflow image, DAGs, plugins (NewsAPI client, dedup, MinIO/Postgres/ClickHouse I/O, LLM client, audit log)
 dbt/         dbt-clickhouse project: stage → ods → mart
 fastapi_app/ Serving API over ClickHouse (articles, stats) and Postgres (pipeline run history)
+frontend/    Vite + React + TypeScript SPA (Discovery-style feed) served by nginx
 sql/         Hand-written DDL for Postgres and ClickHouse init tables
 docs/        Architecture diagram + ADRs
 tests/       Unit tests for news_pipeline (dedup, clustering, LLM parsing, Postgres upsert) and

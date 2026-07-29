@@ -4,11 +4,18 @@ function object each router imports via `from db.xxx import get_xxx` (identity-b
 importing the same names here is what makes the override actually apply).
 """
 
-import pytest
-from db.clickhouse_client import get_clickhouse_client
-from db.postgres_client import get_postgres_connection
-from fastapi.testclient import TestClient
-from main import app
+import os
+
+# Settings() requires NEWSDATA_PG_DSN and main.py now reads settings at import time (for the
+# CORS middleware's allowed-origins list) - no real Postgres connection is ever made in these
+# tests (get_postgres_connection is overridden below), so any well-formed DSN placeholder works.
+os.environ.setdefault("NEWSDATA_PG_DSN", "postgresql://test:test@localhost:5432/test")
+
+import pytest  # noqa: E402
+from db.clickhouse_client import get_clickhouse_client  # noqa: E402
+from db.postgres_client import get_postgres_connection  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from main import app  # noqa: E402
 
 
 class FakeQueryResult:
