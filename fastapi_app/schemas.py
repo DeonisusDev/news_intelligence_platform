@@ -30,10 +30,26 @@ class SourceArticle(BaseModel):
     url_to_image: str | None
     published_at: datetime | None
     category: str | None
+    # Phase 6.1: "what this outlet focused on," matched by url_hash server-side - not present
+    # on every source (e.g. the model omitted it, or a single-source cluster has none at all).
+    source_summary: str | None = None
+
+
+class KeyFacts(BaseModel):
+    organizations: list[str]
+    locations: list[str]
+    people: list[str]
 
 
 class SummaryDetail(SummaryCard):
     sources: list[SourceArticle]
+    # Phase 6.1 - detail-view-only fields, never selected by the /discover list endpoint.
+    key_facts: KeyFacts
+    why_it_matters: str
+    before_state: str | None
+    after_state: str | None
+    consensus_points: list[str]
+    disagreement_points: list[str]
 
 
 class DailyStat(BaseModel):

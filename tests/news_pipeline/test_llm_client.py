@@ -8,6 +8,7 @@ import pytest
 from news_pipeline.llm_client import (
     ClusterArticle,
     EnrichmentError,
+    SourcePerspective,
     _extract_enrichment,
     _format_articles_block,
 )
@@ -38,6 +39,45 @@ def test_extract_enrichment_defaults_keywords_to_empty_list():
     raw = '{"summary": "s", "topic": "Tech", "sentiment": "neutral"}'
     result = _extract_enrichment(raw)
     assert result.keywords == []
+
+
+def test_extract_enrichment_without_rich_detail_fields_still_parses():
+    # A minimal response (e.g. from before Phase 6.1, or a model that ignores the extra fields)
+    # must still validate - all Phase 6.1 fields are optional with empty/null defaults.
+    raw = '{"summary": "s", "topic": "Tech", "sentiment": "neutral"}'
+    result = _extract_enrichment(raw)
+    assert result.key_facts.organizations == []
+    assert result.key_facts.locations == []
+    assert result.key_facts.people == []
+    assert result.why_it_matters == ""
+    assert result.before_state is None
+    assert result.after_state is None
+    assert result.consensus_points == []
+    assert result.disagreement_points == []
+    assert result.source_perspectives == []
+
+
+def test_extract_enrichment_parses_rich_detail_fields():
+    raw = """
+    {
+      "summary": "s", "topic": "Tech", "sentiment": "neutral",
+      "key_facts": {"organizations": ["NASA"], "locations": ["Antarctica"], "people": []},
+      "why_it_matters": "it matters because...",
+      "before_state": "before", "after_state": "after",
+      "consensus_points": ["everyone agrees on X"],
+      "disagreement_points": ["outlets differ on Y"],
+      "source_perspectives": [{"index": 1, "focus": "focuses on X"}]
+    }
+    """
+    result = _extract_enrichment(raw)
+    assert result.key_facts.organizations == ["NASA"]
+    assert result.key_facts.locations == ["Antarctica"]
+    assert result.why_it_matters == "it matters because..."
+    assert result.before_state == "before"
+    assert result.after_state == "after"
+    assert result.consensus_points == ["everyone agrees on X"]
+    assert result.disagreement_points == ["outlets differ on Y"]
+    assert result.source_perspectives == [SourcePerspective(index=1, focus="focuses on X")]
 
 
 def test_extract_enrichment_raises_when_no_json_object_present():

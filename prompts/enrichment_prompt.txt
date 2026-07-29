@@ -8,8 +8,26 @@ code fences, no commentary before or after it - matching exactly this shape:
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "topic": "one short category label, e.g. Technology, Politics, Business, Sports, Health, Science, Entertainment, World",
   "sentiment": "positive, negative, or neutral",
-  "sentiment_score": a number from -1.0 (very negative) to 1.0 (very positive)
+  "sentiment_score": a number from -1.0 (very negative) to 1.0 (very positive),
+  "key_facts": {{
+    "organizations": ["organization/company names actually mentioned - empty array if none"],
+    "locations": ["place names actually mentioned - empty array if none"],
+    "people": ["person names actually mentioned - empty array if none"]
+  }},
+  "why_it_matters": "1-2 sentences of ANALYSIS on why this story matters or what its broader implications are - do not just restate the summary",
+  "before_state": "what the situation was before this event, or null if there's no clear before/after change (e.g. a lifestyle, opinion, or human-interest story)",
+  "after_state": "what changed as a result of this event, or null if before_state is null",
+  "consensus_points": ["a specific fact or claim multiple sources below agree on - empty array if only one article is listed below"],
+  "disagreement_points": ["a specific fact, framing, or emphasis sources below disagree on - empty array if only one article is listed below, or if sources don't meaningfully disagree"],
+  "source_perspectives": [
+    {{"index": 1, "focus": "one short sentence on what THIS numbered article emphasizes, distinct from the others - omit entirely if only one article is listed below"}}
+  ]
 }}
+
+Use the article's number (starting at 1) from the list below as "index" in source_perspectives -
+one entry per article. If only one article is listed below, leave consensus_points,
+disagreement_points, and source_perspectives as empty arrays: with a single source there is
+nothing to compare across sources.
 
 Articles reporting on this story:
 {articles_block}

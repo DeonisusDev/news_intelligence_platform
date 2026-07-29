@@ -34,12 +34,34 @@ class ClusterArticle:
     source_name: str | None
 
 
+class KeyFacts(BaseModel):
+    organizations: list[str] = Field(default_factory=list)
+    locations: list[str] = Field(default_factory=list)
+    people: list[str] = Field(default_factory=list)
+
+
+class SourcePerspective(BaseModel):
+    # 1-based, matching the numbered list _format_articles_block sends the model - not
+    # source_name (too easy for the model to paraphrase/typo) and not a name-based lookup after
+    # the fact. The caller zips this back onto its own url_hash list by this same index.
+    index: int
+    focus: str
+
+
 class ClusterEnrichment(BaseModel):
     summary: str
     keywords: list[str] = Field(default_factory=list)
     topic: str
     sentiment: str
     sentiment_score: float | None = None
+    # Phase 6.1 additions - all from this same call, not a second LLM round-trip per cluster.
+    key_facts: KeyFacts = Field(default_factory=KeyFacts)
+    why_it_matters: str = ""
+    before_state: str | None = None
+    after_state: str | None = None
+    consensus_points: list[str] = Field(default_factory=list)
+    disagreement_points: list[str] = Field(default_factory=list)
+    source_perspectives: list[SourcePerspective] = Field(default_factory=list)
 
 
 class EnrichmentError(Exception):
@@ -90,7 +112,12 @@ def enrich_cluster(
     # not potentially hang for hours. Rate-limit/timeout errors propagate to the caller uncaught
     # (see enrichment_io.py's per-cluster try/except) rather than being retried here - only
     # response-parsing failures (EnrichmentError) get our own retry.
-    client = OpenAI(api_key=api_key, base_url=base_url, timeout=30.0, max_retries=1)
+    # 60s (was 30s pre-Phase-6.1): the Phase 6.1 response schema is 2-3x bigger (key facts, AI
+    # analysis, consensus/disagreement, per-source perspectives all come from this same call),
+    # and a real test against gpt-oss-20b hit ~85s wall-clock on one cluster at the old 30s
+    # timeout (i.e. it was already retrying once internally) - free-tier generation speed for a
+    # bigger response needs real headroom here, not just a bigger number for its own sake.
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0, max_retries=1)
     prompt = PROMPT_PATH.read_text().format(articles_block=_format_articles_block(articles))
 
     response = client.chat.completions.create(

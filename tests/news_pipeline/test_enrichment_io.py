@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import news_pipeline.enrichment_io as enrichment_io
 from news_pipeline.enrichment_io import enrich_pending_clusters
-from news_pipeline.llm_client import ClusterEnrichment, EnrichmentError
+from news_pipeline.llm_client import ClusterEnrichment, EnrichmentError, SourcePerspective
 
 
 class FakeResult:
@@ -44,8 +44,8 @@ def test_returns_zero_counts_when_nothing_pending():
 
 def test_all_clusters_succeed():
     pending = [
-        ("cluster1", [("T1", "D1", "Forbes")]),
-        ("cluster2", [("T2", "D2", "Biztoc.com")]),
+        ("cluster1", [("hash1", "T1", "D1", "Forbes")]),
+        ("cluster2", [("hash2", "T2", "D2", "Biztoc.com")]),
     ]
     client = FakeClickHouseClient(pending)
 
@@ -62,8 +62,8 @@ def test_all_clusters_succeed():
 
 def test_per_cluster_failure_does_not_stop_the_run():
     pending = [
-        ("cluster1", [("T1", "D1", "Forbes")]),
-        ("cluster2", [("T2", "D2", "Biztoc.com")]),
+        ("cluster1", [("hash1", "T1", "D1", "Forbes")]),
+        ("cluster2", [("hash2", "T2", "D2", "Biztoc.com")]),
     ]
     client = FakeClickHouseClient(pending)
 
@@ -85,7 +85,9 @@ def test_per_cluster_failure_does_not_stop_the_run():
 
 
 def test_multi_article_cluster_builds_one_clusterarticle_per_member():
-    pending = [("cluster1", [("T1", "D1", "Forbes"), ("T1b", "D1b", "Biztoc.com")])]
+    pending = [
+        ("cluster1", [("hash1", "T1", "D1", "Forbes"), ("hash2", "T1b", "D1b", "Biztoc.com")])
+    ]
     client = FakeClickHouseClient(pending)
     captured = {}
 
@@ -100,3 +102,58 @@ def test_multi_article_cluster_builds_one_clusterarticle_per_member():
     assert captured["articles"][0].source_name == "Forbes"
     assert captured["articles"][1].source_name == "Biztoc.com"
     assert client.inserted_rows[0][9] == 2  # article_count
+
+
+def test_source_perspectives_are_keyed_by_url_hash_via_index():
+    pending = [
+        ("cluster1", [("hash1", "T1", "D1", "Forbes"), ("hash2", "T1b", "D1b", "Biztoc.com")])
+    ]
+    client = FakeClickHouseClient(pending)
+    enrichment = ClusterEnrichment(
+        summary="s",
+        topic="Tech",
+        sentiment="neutral",
+        source_perspectives=[
+            SourcePerspective(index=2, focus="Biztoc's angle"),
+            SourcePerspective(index=1, focus="Forbes' angle"),
+        ],
+    )
+
+    with patch.object(enrichment_io, "enrich_cluster", return_value=enrichment):
+        enrich_pending_clusters(api_key="k", base_url="u", model="m", client=client)
+
+    source_perspectives = client.inserted_rows[0][19]
+    assert ("hash2", "Biztoc's angle") in source_perspectives
+    assert ("hash1", "Forbes' angle") in source_perspectives
+
+
+def test_out_of_range_source_perspective_index_is_dropped():
+    pending = [("cluster1", [("hash1", "T1", "D1", "Forbes")])]
+    client = FakeClickHouseClient(pending)
+    enrichment = ClusterEnrichment(
+        summary="s",
+        topic="Tech",
+        sentiment="neutral",
+        source_perspectives=[SourcePerspective(index=5, focus="hallucinated index")],
+    )
+
+    with patch.object(enrichment_io, "enrich_cluster", return_value=enrichment):
+        enrich_pending_clusters(api_key="k", base_url="u", model="m", client=client)
+
+    assert client.inserted_rows[0][19] == []
+
+
+def test_failed_cluster_gets_empty_defaults_for_rich_detail_fields():
+    pending = [("cluster1", [("hash1", "T1", "D1", "Forbes")])]
+    client = FakeClickHouseClient(pending)
+
+    with patch.object(
+        enrichment_io, "enrich_cluster", side_effect=EnrichmentError("boom", raw_response="raw")
+    ):
+        enrich_pending_clusters(api_key="k", base_url="u", model="m", client=client)
+
+    row = client.inserted_rows[0]
+    assert row[11:14] == ([], [], [])  # key_facts_organizations/locations/people
+    assert row[14] == ""  # why_it_matters
+    assert row[15] is None and row[16] is None  # before_state, after_state
+    assert row[17:20] == ([], [], [])  # consensus_points, disagreement_points, source_perspectives

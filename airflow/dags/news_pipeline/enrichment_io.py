@@ -22,8 +22,10 @@ select
     c.cluster_id,
     -- groupArray on a Nullable(String) column silently drops NULL entries, which desyncs
     -- separate title/description/source groupArrays whenever any member has a NULL field
-    -- (e.g. no description) - grouping as one tuple per row keeps them aligned.
-    groupArray((a.title, a.description, a.source_name)) as members
+    -- (e.g. no description) - grouping as one tuple per row keeps them aligned. url_hash is
+    -- included (not just used to join) so source_perspectives can be keyed by it - see
+    -- llm_client.SourcePerspective's docstring for why not source_name or a bare index.
+    groupArray((a.url_hash, a.title, a.description, a.source_name)) as members
 from mart.article_clusters c final
 inner join mart.mart_articles a on a.url_hash = c.url_hash
 where c.cluster_id not in (
@@ -44,6 +46,15 @@ _INSERT_COLUMNS = [
     "raw_llm_response",
     "article_count",
     "enriched_at",
+    "key_facts_organizations",
+    "key_facts_locations",
+    "key_facts_people",
+    "why_it_matters",
+    "before_state",
+    "after_state",
+    "consensus_points",
+    "disagreement_points",
+    "source_perspectives",
 ]
 
 
@@ -69,7 +80,8 @@ def enrich_pending_clusters(
     succeeded = 0
     failed = 0
     for i, (cluster_id, members) in enumerate(pending, start=1):
-        articles = [ClusterArticle(title=t, description=d, source_name=s) for t, d, s in members]
+        url_hashes = [m[0] for m in members]
+        articles = [ClusterArticle(title=m[1], description=m[2], source_name=m[3]) for m in members]
         enriched_at = datetime.now(timezone.utc)
         try:
             enrichment = enrich_cluster(
@@ -78,6 +90,14 @@ def enrich_pending_clusters(
                 model=model,
                 articles=articles,
             )
+            # Keyed by url_hash (not index or source_name) so a lookup on the FastAPI side is
+            # unambiguous even if the model returns a duplicate/out-of-range index - out-of-range
+            # entries are just dropped here rather than crashing a whole cluster's enrichment.
+            source_perspectives = [
+                (url_hashes[p.index - 1], p.focus)
+                for p in enrichment.source_perspectives
+                if 1 <= p.index <= len(url_hashes)
+            ]
             row = (
                 cluster_id,
                 enrichment.summary,
@@ -90,6 +110,15 @@ def enrich_pending_clusters(
                 None,
                 len(articles),
                 enriched_at,
+                enrichment.key_facts.organizations,
+                enrichment.key_facts.locations,
+                enrichment.key_facts.people,
+                enrichment.why_it_matters,
+                enrichment.before_state,
+                enrichment.after_state,
+                enrichment.consensus_points,
+                enrichment.disagreement_points,
+                source_perspectives,
             )
             succeeded += 1
         except Exception as exc:
@@ -106,6 +135,15 @@ def enrich_pending_clusters(
                 raw_response,
                 len(articles),
                 enriched_at,
+                [],
+                [],
+                [],
+                "",
+                None,
+                None,
+                [],
+                [],
+                [],
             )
             failed += 1
 

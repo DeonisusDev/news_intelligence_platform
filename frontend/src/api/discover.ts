@@ -23,10 +23,25 @@ export interface SourceArticle {
   url_to_image: string | null;
   published_at: string | null;
   category: string | null;
+  // Phase 6.1: "what this outlet focused on" - not present for every source.
+  source_summary: string | null;
+}
+
+export interface KeyFacts {
+  organizations: string[];
+  locations: string[];
+  people: string[];
 }
 
 export interface SummaryDetail extends SummaryCard {
   sources: SourceArticle[];
+  // Phase 6.1 - detail-view-only.
+  key_facts: KeyFacts;
+  why_it_matters: string;
+  before_state: string | null;
+  after_state: string | null;
+  consensus_points: string[];
+  disagreement_points: string[];
 }
 
 export interface TopicStat {

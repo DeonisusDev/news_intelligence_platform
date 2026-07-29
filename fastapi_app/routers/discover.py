@@ -8,7 +8,7 @@ from __future__ import annotations
 from clickhouse_connect.driver.client import Client
 from db.clickhouse_client import get_clickhouse_client
 from fastapi import APIRouter, Depends, HTTPException, Query
-from schemas import SourceArticle, SummaryCard, SummaryDetail
+from schemas import KeyFacts, SourceArticle, SummaryCard, SummaryDetail
 
 router = APIRouter(prefix="/discover", tags=["discover"])
 
@@ -40,16 +40,24 @@ inner join cluster_media m on m.cluster_id = c.cluster_id
 where c.enrichment_status = 'success'
 """
 
+# Detail-view-only fields (Phase 6.1) - never selected by the list endpoint above.
+_DETAIL_EXTRA_COLUMNS = (
+    "c.key_facts_organizations, c.key_facts_locations, c.key_facts_people, c.why_it_matters, "
+    "c.before_state, c.after_state, c.consensus_points, c.disagreement_points, "
+    "c.source_perspectives"
+)
+
 _DETAIL_SQL = f"""
 {_CLUSTER_MEDIA_CTE}
-select {_CARD_COLUMNS}
+select {_CARD_COLUMNS}, {_DETAIL_EXTRA_COLUMNS}
 from mart.summary_clusters c final
 inner join cluster_media m on m.cluster_id = c.cluster_id
 where c.enrichment_status = 'success' and c.cluster_id = {{cluster_id:String}}
 """
 
 _SOURCES_SQL = """
-select a.source_name, a.source_provider, a.title, a.url, a.url_to_image, a.published_at, a.category
+select a.url_hash, a.source_name, a.source_provider, a.title, a.url, a.url_to_image,
+       a.published_at, a.category
 from mart.article_clusters c final
 inner join mart.mart_articles a on a.url_hash = c.url_hash
 where c.cluster_id = {cluster_id:String}
@@ -99,18 +107,33 @@ def get_summary_detail(
     if not rows:
         raise HTTPException(status_code=404, detail="Cluster not found")
 
-    card = _row_to_card(rows[0])
+    row = rows[0]
+    card = _row_to_card(row)
+    # Keyed by url_hash (see llm_client.SourcePerspective / enrichment_io.py) so it can't be
+    # thrown off by a source_name the model paraphrased slightly differently from our data.
+    perspective_by_hash = dict(row[18])
+
     source_rows = client.query(_SOURCES_SQL, parameters={"cluster_id": cluster_id}).result_rows
     sources = [
         SourceArticle(
-            source_name=r[0],
-            source_provider=r[1],
-            title=r[2],
-            url=r[3],
-            url_to_image=r[4],
-            published_at=r[5],
-            category=r[6],
+            source_name=r[1],
+            source_provider=r[2],
+            title=r[3],
+            url=r[4],
+            url_to_image=r[5],
+            published_at=r[6],
+            category=r[7],
+            source_summary=perspective_by_hash.get(r[0]),
         )
         for r in source_rows
     ]
-    return SummaryDetail(**card.model_dump(), sources=sources)
+    return SummaryDetail(
+        **card.model_dump(),
+        sources=sources,
+        key_facts=KeyFacts(organizations=row[10], locations=row[11], people=row[12]),
+        why_it_matters=row[13],
+        before_state=row[14],
+        after_state=row[15],
+        consensus_points=row[16],
+        disagreement_points=row[17],
+    )

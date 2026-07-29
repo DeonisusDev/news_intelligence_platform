@@ -16,7 +16,21 @@ CREATE TABLE IF NOT EXISTS mart.summary_clusters
     raw_llm_response  Nullable(String),
     article_count     UInt32,             -- how many articles fed into this cluster's summary
     enriched_at       DateTime,
-    created_at        DateTime DEFAULT now()
+    created_at        DateTime DEFAULT now(),
+    -- Phase 6.1 (see docs/adr/0008-rich-event-detail.md): all populated by the same enrichment
+    -- LLM call as the fields above, not a second call - detail-view-only, never selected by the
+    -- /discover list endpoint.
+    key_facts_organizations Array(String),
+    key_facts_locations     Array(String),
+    key_facts_people        Array(String),
+    why_it_matters          String,
+    before_state            Nullable(String),
+    after_state             Nullable(String),
+    consensus_points        Array(String),
+    disagreement_points     Array(String),
+    -- (url_hash, focus) pairs - url_hash (not source_name or a positional index) is the join key
+    -- back to mart_articles, matching this codebase's existing url_hash-everywhere convention.
+    source_perspectives     Array(Tuple(String, String))
 )
 ENGINE = ReplacingMergeTree(enriched_at)
 ORDER BY cluster_id;

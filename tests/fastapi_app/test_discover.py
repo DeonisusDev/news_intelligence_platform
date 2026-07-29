@@ -15,8 +15,22 @@ CARD_ROW = (
     "https://forbes.com/img.jpg",
 )
 
+# CARD_ROW plus the Phase 6.1 detail-only columns (see _DETAIL_EXTRA_COLUMNS in discover.py).
+DETAIL_ROW = CARD_ROW + (
+    ["Acme Corp"],
+    ["Antarctica"],
+    [],
+    "it matters because of X",
+    "before state",
+    "after state",
+    ["everyone agrees on X"],
+    ["outlets differ on Y"],
+    [("hash1", "Forbes' angle")],
+)
+
 SOURCE_ROWS = [
     (
+        "hash1",
         "Forbes",
         "newsapi",
         "T1",
@@ -26,6 +40,7 @@ SOURCE_ROWS = [
         "technology",
     ),
     (
+        "hash2",
         "Biztoc.com",
         "newsapi",
         "T1",
@@ -78,7 +93,7 @@ def test_list_rejects_limit_above_max(make_client):
 
 
 def test_detail_returns_card_and_sources(make_client):
-    client, fake = make_client(ch_responses=[[CARD_ROW], SOURCE_ROWS])
+    client, fake = make_client(ch_responses=[[DETAIL_ROW], SOURCE_ROWS])
 
     response = client.get("/discover/cluster1")
 
@@ -88,6 +103,34 @@ def test_detail_returns_card_and_sources(make_client):
     assert len(body["sources"]) == 2
     assert body["sources"][0]["source_name"] == "Forbes"
     assert body["sources"][1]["source_name"] == "Biztoc.com"
+
+
+def test_detail_includes_rich_event_detail_fields(make_client):
+    client, fake = make_client(ch_responses=[[DETAIL_ROW], SOURCE_ROWS])
+
+    response = client.get("/discover/cluster1")
+
+    body = response.json()
+    assert body["key_facts"] == {
+        "organizations": ["Acme Corp"],
+        "locations": ["Antarctica"],
+        "people": [],
+    }
+    assert body["why_it_matters"] == "it matters because of X"
+    assert body["before_state"] == "before state"
+    assert body["after_state"] == "after state"
+    assert body["consensus_points"] == ["everyone agrees on X"]
+    assert body["disagreement_points"] == ["outlets differ on Y"]
+
+
+def test_detail_matches_source_perspective_by_url_hash(make_client):
+    client, fake = make_client(ch_responses=[[DETAIL_ROW], SOURCE_ROWS])
+
+    response = client.get("/discover/cluster1")
+
+    sources = response.json()["sources"]
+    assert sources[0]["source_summary"] == "Forbes' angle"  # hash1
+    assert sources[1]["source_summary"] is None  # hash2 has no perspective entry
 
 
 def test_detail_404s_for_unknown_cluster(make_client):
