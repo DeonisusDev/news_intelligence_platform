@@ -8,3 +8,43 @@ sources:
         description: >
           Raw articles copied 1:1 from Postgres raw_articles by the
           load_postgres_to_clickhouse_raw Airflow task, scoped per run to newly-inserted rows.
+          Despite the table name, rows come from either ingestion provider (NewsAPI or
+          GNews.io) - see source_provider.
+        columns:
+          - name: url_hash
+            description: SHA-256 of the article URL - the stable dedup/join key reused at every layer of this pipeline.
+          - name: source_id
+            description: >
+              Provider-assigned source identifier. NewsAPI only populates this for a small set
+              of "top sources" - most articles have a null id, which is why joins use
+              source_name instead (see dim_source).
+          - name: source_name
+            description: Human-readable outlet name as reported by the provider - the reliably-populated identifier used for joins.
+          - name: author
+            description: Byline as reported by the provider. Frequently null; not cleaned or deduplicated.
+          - name: title
+            description: Raw article headline, untrimmed.
+          - name: description
+            description: Raw short summary/dek as reported by the source, untrimmed.
+          - name: content
+            description: >
+              Article body as reported by the provider. NewsAPI's free tier truncates this to
+              ~260 characters (see stg_articles.is_content_truncated); GNews has no such limit.
+          - name: url
+            description: Canonical article URL - the identity the provider itself considers unique per article.
+          - name: url_to_image
+            description: Thumbnail image URL as reported by the source, if any.
+          - name: published_at
+            description: Source-reported publish timestamp.
+          - name: category
+            description: Top-headlines category this article was fetched under (e.g. "technology", "sports") - see docs/adr/0006.
+          - name: source_provider
+            description: Which ingestion API returned this row - "newsapi" or "gnews".
+          - name: fetched_at
+            description: When the ingestion DAG fetched this row. Drives ods_articles's incremental load and this table's ReplacingMergeTree ordering.
+          - name: raw_payload
+            description: The provider's full JSON response for this article, kept verbatim for replay/debugging - not projected past this layer.
+          - name: ingestion_run_id
+            description: Airflow run_id that fetched this row - joins back to Postgres pipeline_run_log for operational traceability.
+          - name: created_at
+            description: When this row was inserted into ClickHouse (not the same as fetched_at, which is provider-side/DAG-logical time).

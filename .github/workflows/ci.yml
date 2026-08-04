@@ -102,6 +102,26 @@ jobs:
           AIRFLOW_VAR_CLICKHOUSE_USER: default
           AIRFLOW_VAR_CLICKHOUSE_PASSWORD: clickhouse
           AIRFLOW_VAR_CLICKHOUSE_DATABASE: default
+      # Phase 8: catalog docs, built against the same already-populated ClickHouse so the
+      # generated catalog.json reflects real column types, not just the manifest's static
+      # config. Uploaded as a CI artifact (not a public deploy - see docs/adr/0011-dbt-docs.md).
+      - name: dbt docs generate
+        working-directory: dbt
+        run: >
+          dbt docs generate --profiles-dir . --project-dir . --profile news_intelligence --target prod
+          --log-path /tmp/dbt_logs --target-path /tmp/dbt_target
+        env:
+          AIRFLOW_VAR_CLICKHOUSE_HOST: localhost
+          AIRFLOW_VAR_CLICKHOUSE_PORT: "8123"
+          AIRFLOW_VAR_CLICKHOUSE_USER: default
+          AIRFLOW_VAR_CLICKHOUSE_PASSWORD: clickhouse
+          AIRFLOW_VAR_CLICKHOUSE_DATABASE: default
+      - name: Upload dbt docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-docs
+          path: /tmp/dbt_target
+          retention-days: 14
 
   compose-smoke:
     runs-on: ubuntu-latest

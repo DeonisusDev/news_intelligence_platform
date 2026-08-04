@@ -5,6 +5,44 @@ models:
     description: Cleaned 1:1 view over raw.newsapi_articles - trimmed text, URL domain, truncation flag.
     columns:
       - name: url_hash
+        description: SHA-256 of the article URL - the stable dedup/join key reused at every layer of this pipeline.
         tests: [unique, not_null]
+      - name: source_id
+        description: >
+          Provider-assigned source identifier. NewsAPI only populates this for a small set of
+          "top sources" - most articles have a null id, which is why joins use source_name
+          instead (see mart.dim_source).
+      - name: source_name
+        description: Human-readable outlet name as reported by the provider - the reliably-populated identifier used for joins.
+      - name: author
+        description: Byline as reported by the provider. Frequently null; not cleaned or deduplicated.
+      - name: title
+        description: Article headline, trimmed of leading/trailing whitespace.
+      - name: description
+        description: Short summary/dek as reported by the source, trimmed of leading/trailing whitespace.
+      - name: content
+        description: >
+          Article body as reported by the provider, unmodified. NewsAPI's free tier truncates
+          this to ~260 characters (see is_content_truncated); GNews has no such limit.
+      - name: is_content_truncated
+        description: >
+          True when content's length is at or above the free-tier truncation threshold (260
+          chars) - a heuristic flag inferred from length, not an exact truncation marker the
+          provider reports.
       - name: url
+        description: Canonical article URL - the identity the provider itself considers unique per article.
         tests: [not_null]
+      - name: url_domain
+        description: Domain extracted from url - groups articles by publishing domain independent of the self-reported source_name.
+      - name: url_to_image
+        description: Thumbnail image URL as reported by the source, if any.
+      - name: published_at
+        description: Source-reported publish timestamp.
+      - name: category
+        description: Top-headlines category this article was fetched under (e.g. "technology", "sports") - see docs/adr/0006.
+      - name: source_provider
+        description: Which ingestion API returned this row - "newsapi" or "gnews".
+      - name: fetched_at
+        description: When the ingestion DAG fetched this row. Drives ods_articles's incremental load.
+      - name: ingestion_run_id
+        description: Airflow run_id that fetched this row - joins back to Postgres pipeline_run_log for operational traceability.
