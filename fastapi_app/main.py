@@ -1,7 +1,7 @@
 from config import get_settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import discover, pipeline, stats
+from routers import auth, discover, pipeline, stats
 
 app = FastAPI(title="News Intelligence Platform API")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 app.include_router(discover.router)
 app.include_router(stats.router)
 app.include_router(pipeline.router)
+app.include_router(auth.router)
 
 
 @app.get("/health")

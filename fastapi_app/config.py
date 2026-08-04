@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # `frontend` service) - no wildcard, since cookies will carry auth once Phase 6.5 lands.
     cors_allowed_origins: str = "http://localhost:3000"
 
+    # Signs the Phase 6.5 auth JWT (see auth.py). No default - must come from the environment,
+    # same convention as AIRFLOW_API_SECRET_KEY/AIRFLOW_JWT_SECRET in docker-compose.yml.
+    jwt_secret: str
+
     @property
     def cors_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]

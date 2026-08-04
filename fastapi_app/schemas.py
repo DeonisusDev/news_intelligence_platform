@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 
 class SummaryCard(BaseModel):
@@ -61,6 +61,22 @@ class DailyStat(BaseModel):
 class TopicStat(BaseModel):
     topic: str
     cluster_count: int
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserPublic(BaseModel):
+    id: int
+    email: str
+    created_at: datetime
 
 
 class PipelineRun(BaseModel):

@@ -3,3 +3,6 @@ uvicorn[standard]
 clickhouse-connect
 psycopg2-binary
 pydantic-settings
+pydantic[email]
+bcrypt
+pyjwt

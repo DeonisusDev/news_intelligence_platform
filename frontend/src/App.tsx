@@ -1,15 +1,22 @@
 import { useState } from "react";
+import { AuthDialog } from "@/components/AuthDialog";
 import { SourceDialog } from "@/components/SourceDialog";
 import { SummaryCard } from "@/components/SummaryCard";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TopicFilter } from "@/components/TopicFilter";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrentUser, useLogout } from "@/hooks/useAuth";
 import { useDiscoverFeed } from "@/hooks/useDiscoverFeed";
 import { useInfiniteScrollTrigger } from "@/hooks/useInfiniteScrollTrigger";
 
 function App() {
   const [topic, setTopic] = useState<string | null>(null);
   const [openClusterId, setOpenClusterId] = useState<string | null>(null);
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+
+  const { data: currentUser } = useCurrentUser();
+  const logoutMutation = useLogout();
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } =
     useDiscoverFeed(topic ?? undefined);
@@ -28,7 +35,28 @@ function App() {
             <h1 className="text-lg font-semibold">News Intelligence</h1>
             <TopicFilter selected={topic} onSelect={setTopic} />
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            {currentUser ? (
+              <>
+                <span className="hidden text-sm text-muted-foreground sm:inline">
+                  {currentUser.email}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => logoutMutation.mutate()}
+                  disabled={logoutMutation.isPending}
+                >
+                  Log out
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setAuthDialogOpen(true)}>
+                Log in
+              </Button>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
@@ -62,6 +90,7 @@ function App() {
         clusterId={openClusterId}
         onOpenChange={(open) => !open && setOpenClusterId(null)}
       />
+      <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
     </div>
   );
 }

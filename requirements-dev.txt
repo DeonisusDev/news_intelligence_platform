@@ -9,5 +9,7 @@ pydantic-settings
 clickhouse-connect
 psycopg2-binary
 openai
-pydantic
+pydantic[email]
 tenacity
+bcrypt
+pyjwt

@@ -6,10 +6,11 @@ importing the same names here is what makes the override actually apply).
 
 import os
 
-# Settings() requires NEWSDATA_PG_DSN and main.py now reads settings at import time (for the
-# CORS middleware's allowed-origins list) - no real Postgres connection is ever made in these
-# tests (get_postgres_connection is overridden below), so any well-formed DSN placeholder works.
+# Settings() requires NEWSDATA_PG_DSN/JWT_SECRET and main.py now reads settings at import time
+# (for the CORS middleware's allowed-origins list) - no real Postgres connection is ever made in
+# these tests (get_postgres_connection is overridden below), so placeholders are fine.
 os.environ.setdefault("NEWSDATA_PG_DSN", "postgresql://test:test@localhost:5432/test")
+os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production")
 
 import pytest  # noqa: E402
 from db.clickhouse_client import get_clickhouse_client  # noqa: E402
@@ -74,6 +75,74 @@ def make_client():
 
     yield _make
     app.dependency_overrides.pop(get_clickhouse_client, None)
+
+
+class FakeUsersCursor:
+    """Understands exactly the two queries routers/auth.py issues, backed by an in-memory dict
+    keyed by email - enough to exercise register/login's real branching (duplicate email,
+    wrong password) without a real Postgres."""
+
+    def __init__(self, store):
+        self._store = store
+        self._result = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def execute(self, sql, params=None):
+        sql_l = sql.lower()
+        if "insert into users" in sql_l:
+            email = params["email"]
+            if email in self._store:
+                import psycopg2.errors
+
+                raise psycopg2.errors.UniqueViolation("duplicate email")
+            row = {
+                "id": len(self._store) + 1,
+                "email": email,
+                "password_hash": params["password_hash"],
+                "created_at": "2026-08-04T00:00:00+00:00",
+            }
+            self._store[email] = row
+            self._result = row
+        elif "select" in sql_l and "from users" in sql_l:
+            self._result = self._store.get(params["email"])
+        else:
+            raise AssertionError(f"FakeUsersCursor doesn't understand: {sql!r}")
+
+    def fetchone(self):
+        return self._result
+
+
+class FakeUsersConnection:
+    def __init__(self, store):
+        self._store = store
+
+    def cursor(self):
+        return FakeUsersCursor(self._store)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+
+@pytest.fixture
+def make_auth_client():
+    """Returns a factory: make_auth_client() -> (TestClient, users_store dict), with an
+    in-memory fake Postgres users table wired in via dependency override."""
+
+    def _make(seed_users=None):
+        store = dict(seed_users or {})
+        app.dependency_overrides[get_postgres_connection] = lambda: FakeUsersConnection(store)
+        return TestClient(app), store
+
+    yield _make
+    app.dependency_overrides.pop(get_postgres_connection, None)
 
 
 @pytest.fixture
