@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class SummaryCard(BaseModel):
@@ -20,6 +20,9 @@ class SummaryCard(BaseModel):
     enriched_at: datetime
     first_published_at: datetime
     image_url: str | None
+    # Phase 7 - the logged-in requester's own vote on this cluster, if any. Always None for
+    # anonymous requests (GET /discover doesn't touch cluster_feedback for them at all).
+    my_vote: int | None = None
 
 
 class SourceArticle(BaseModel):
@@ -77,6 +80,17 @@ class UserPublic(BaseModel):
     id: int
     email: str
     created_at: datetime
+
+
+class FeedbackRequest(BaseModel):
+    vote: int
+
+    @field_validator("vote")
+    @classmethod
+    def validate_vote(cls, v: int) -> int:
+        if v not in (-1, 1):
+            raise ValueError("vote must be 1 (up) or -1 (down)")
+        return v
 
 
 class PipelineRun(BaseModel):

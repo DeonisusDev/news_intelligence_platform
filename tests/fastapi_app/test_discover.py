@@ -1,6 +1,9 @@
 """Endpoint tests for the Discovery-feed routes (see routers/discover.py) - list, detail, 404,
-and topic filtering, all against a fake ClickHouse client so no database is needed.
+topic filtering, and (Phase 7) feedback voting + affinity re-ranking, all against fake
+ClickHouse/Postgres clients so no database is needed.
 """
+
+from conftest import login_as
 
 CARD_ROW = (
     "cluster1",
@@ -140,3 +143,116 @@ def test_detail_404s_for_unknown_cluster(make_client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Cluster not found"
+
+
+# --- Phase 7: feedback (thumbs up/down) ---------------------------------------------------
+
+
+def test_feedback_requires_login(make_client):
+    client, _ = make_client(ch_responses=[])
+
+    response = client.post("/discover/cluster1/feedback", json={"vote": 1})
+
+    assert response.status_code == 401
+
+
+def test_feedback_rejects_an_invalid_vote_value(make_feedback_client):
+    client, _, _ = make_feedback_client()
+    login_as(client)
+
+    response = client.post("/discover/cluster1/feedback", json={"vote": 0})
+
+    assert response.status_code == 422
+
+
+def test_feedback_upsert_stores_the_vote(make_feedback_client):
+    client, _, store = make_feedback_client()
+    login_as(client, user_id=7)
+
+    response = client.post("/discover/cluster1/feedback", json={"vote": 1})
+
+    assert response.status_code == 204
+    assert store[(7, "cluster1")] == 1
+
+
+def test_feedback_upsert_overwrites_a_previous_vote(make_feedback_client):
+    client, _, store = make_feedback_client(feedback_store={(7, "cluster1"): 1})
+    login_as(client, user_id=7)
+
+    client.post("/discover/cluster1/feedback", json={"vote": -1})
+
+    assert store[(7, "cluster1")] == -1
+
+
+def test_feedback_delete_removes_the_vote(make_feedback_client):
+    client, _, store = make_feedback_client(feedback_store={(7, "cluster1"): 1})
+    login_as(client, user_id=7)
+
+    response = client.delete("/discover/cluster1/feedback")
+
+    assert response.status_code == 204
+    assert (7, "cluster1") not in store
+
+
+# --- Phase 7: affinity re-ranking for logged-in users -------------------------------------
+
+CARD_ROW_SPORTS = (
+    "cluster2",
+    "A sports summary",
+    "Sports",
+    "neutral",
+    0.0,
+    ["olympics"],
+    1,
+    "2026-07-28T09:00:00",
+    "2026-07-27T12:00:00",
+    None,
+)
+
+
+def test_list_is_unweighted_and_untouched_for_a_logged_in_user_with_no_votes(make_feedback_client):
+    client, fake, _ = make_feedback_client(ch_responses=[[CARD_ROW, CARD_ROW_SPORTS]])
+    login_as(client)
+
+    response = client.get("/discover")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["cluster_id"] for c in body] == ["cluster1", "cluster2"]
+    assert all(c["my_vote"] is None for c in body)
+
+
+def test_list_reranks_by_affinity_to_previously_liked_clusters(make_feedback_client):
+    # Candidate window comes back recency-sorted: cluster1 (Technology) before cluster2 (Sports).
+    # The user has previously upvoted a Sports cluster, so cluster2 should be promoted above it.
+    client, fake, _ = make_feedback_client(
+        ch_responses=[
+            [CARD_ROW, CARD_ROW_SPORTS],  # candidate window
+            [("liked-cluster", "Sports", ["olympics"])],  # affinity-profile lookup
+        ],
+        feedback_store={(1, "liked-cluster"): 1},
+    )
+    login_as(client, user_id=1)
+
+    response = client.get("/discover")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["cluster_id"] for c in body] == ["cluster2", "cluster1"]
+
+
+def test_list_reports_the_users_own_vote_per_card(make_feedback_client):
+    # cluster1 has an up-vote, so the affinity-profile lookup fires too (fed back its own topic).
+    client, fake, _ = make_feedback_client(
+        ch_responses=[
+            [CARD_ROW, CARD_ROW_SPORTS],  # candidate window
+            [("cluster1", "Technology", ["ai", "chips"])],  # affinity-profile lookup
+        ],
+        feedback_store={(1, "cluster1"): 1, (1, "cluster2"): -1},
+    )
+    login_as(client, user_id=1)
+
+    response = client.get("/discover")
+
+    body = {c["cluster_id"]: c["my_vote"] for c in response.json()}
+    assert body == {"cluster1": 1, "cluster2": -1}

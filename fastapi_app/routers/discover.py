@@ -7,10 +7,19 @@ from __future__ import annotations
 
 from clickhouse_connect.driver.client import Client
 from db.clickhouse_client import get_clickhouse_client
-from fastapi import APIRouter, Depends, HTTPException, Query
-from schemas import KeyFacts, SourceArticle, SummaryCard, SummaryDetail
+from db.postgres_client import get_postgres_connection
+from dependencies import CurrentUser, get_current_user, get_optional_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from psycopg2.extensions import connection as PGConnection
+from ranking import AffinityCard, build_affinity_profile, rank_by_affinity
+from schemas import FeedbackRequest, KeyFacts, SourceArticle, SummaryCard, SummaryDetail
 
 router = APIRouter(prefix="/discover", tags=["discover"])
+
+# Phase 7: how many recency-ordered rows a logged-in re-rank considers. Bounded so re-ranking
+# stays a single cheap ClickHouse query rather than scanning the whole table; infinite scroll
+# for a logged-in user stops once it runs past this window (see docs/adr/0010-recommendations.md).
+_CANDIDATE_WINDOW = 200
 
 _CARD_COLUMNS = (
     "c.cluster_id, c.summary, c.topic, c.sentiment, c.sentiment_score, c.keywords, "
@@ -64,6 +73,26 @@ where c.cluster_id = {cluster_id:String}
 order by a.published_at
 """
 
+# Phase 7: just enough per cluster to build/score an affinity profile from.
+_TOPIC_KEYWORDS_FOR_CLUSTERS_SQL = """
+select cluster_id, topic, keywords from mart.summary_clusters final
+where cluster_id in {cluster_ids:Array(String)}
+"""
+
+_USER_VOTES_SQL = """
+select cluster_id, vote from cluster_feedback where user_id = %(user_id)s
+"""
+
+_UPSERT_FEEDBACK_SQL = """
+insert into cluster_feedback (user_id, cluster_id, vote)
+values (%(user_id)s, %(cluster_id)s, %(vote)s)
+on conflict (user_id, cluster_id) do update set vote = excluded.vote, created_at = now()
+"""
+
+_DELETE_FEEDBACK_SQL = """
+delete from cluster_feedback where user_id = %(user_id)s and cluster_id = %(cluster_id)s
+"""
+
 
 def _row_to_card(row: tuple) -> SummaryCard:
     return SummaryCard(
@@ -86,16 +115,48 @@ def list_summary_cards(
     offset: int = Query(0, ge=0),
     topic: str | None = Query(None, description="Filter to a single topic, exact match"),
     client: Client = Depends(get_clickhouse_client),
+    current_user: CurrentUser | None = Depends(get_optional_current_user),
+    conn: PGConnection = Depends(get_postgres_connection),
 ) -> list[SummaryCard]:
-    sql = _LIST_SQL_BASE
-    params: dict = {"limit": limit, "offset": offset}
+    where_extra = ""
+    params: dict = {}
     if topic:
-        sql += " and c.topic = {topic:String}"
+        where_extra = " and c.topic = {topic:String}"
         params["topic"] = topic
-    sql += " order by c.enriched_at desc limit {limit:UInt32} offset {offset:UInt32}"
 
-    rows = client.query(sql, parameters=params).result_rows
-    return [_row_to_card(row) for row in rows]
+    if current_user is None:
+        # Anonymous/logged-out - plain unweighted feed, unchanged from pre-Phase-7 behavior.
+        sql = _LIST_SQL_BASE + where_extra
+        sql += " order by c.enriched_at desc limit {limit:UInt32} offset {offset:UInt32}"
+        params.update({"limit": limit, "offset": offset})
+        rows = client.query(sql, parameters=params).result_rows
+        return [_row_to_card(row) for row in rows]
+
+    # Logged in - pull a bounded recency-ordered candidate window, re-rank by affinity to the
+    # user's liked clusters, then paginate the *ranked* list (see ranking.py / ADR 0010).
+    window_sql = _LIST_SQL_BASE + where_extra
+    window_sql += " order by c.enriched_at desc limit {window:UInt32}"
+    params["window"] = _CANDIDATE_WINDOW
+    candidates = [
+        _row_to_card(row) for row in client.query(window_sql, parameters=params).result_rows
+    ]
+
+    with conn.cursor() as cur:
+        cur.execute(_USER_VOTES_SQL, {"user_id": current_user.id})
+        votes = {row["cluster_id"]: row["vote"] for row in cur.fetchall()}
+
+    liked_cluster_ids = [cluster_id for cluster_id, vote in votes.items() if vote == 1]
+    if liked_cluster_ids:
+        profile_rows = client.query(
+            _TOPIC_KEYWORDS_FOR_CLUSTERS_SQL, parameters={"cluster_ids": liked_cluster_ids}
+        ).result_rows
+        profile = build_affinity_profile(
+            [AffinityCard(topic=row[1], keywords=row[2]) for row in profile_rows]
+        )
+        candidates = rank_by_affinity(candidates, profile)
+
+    page = candidates[offset : offset + limit]
+    return [card.model_copy(update={"my_vote": votes.get(card.cluster_id)}) for card in page]
 
 
 @router.get("/{cluster_id}", response_model=SummaryDetail)
@@ -137,3 +198,29 @@ def get_summary_detail(
         consensus_points=row[16],
         disagreement_points=row[17],
     )
+
+
+@router.post("/{cluster_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
+def submit_feedback(
+    cluster_id: str,
+    payload: FeedbackRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    conn: PGConnection = Depends(get_postgres_connection),
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            _UPSERT_FEEDBACK_SQL,
+            {"user_id": current_user.id, "cluster_id": cluster_id, "vote": payload.vote},
+        )
+        conn.commit()
+
+
+@router.delete("/{cluster_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
+def remove_feedback(
+    cluster_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    conn: PGConnection = Depends(get_postgres_connection),
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_DELETE_FEEDBACK_SQL, {"user_id": current_user.id, "cluster_id": cluster_id})
+        conn.commit()

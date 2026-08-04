@@ -28,3 +28,16 @@ def get_current_user(request: Request) -> CurrentUser:
     except PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token") from None
     return CurrentUser(id=int(payload["sub"]), email=payload["email"])
+
+
+def get_optional_current_user(request: Request) -> CurrentUser | None:
+    """Like get_current_user, but returns None instead of 401ing - for routes (GET /discover)
+    that serve both anonymous and logged-in users differently rather than requiring a session."""
+    token = request.cookies.get(COOKIE_NAME)
+    if token is None:
+        return None
+    try:
+        payload = decode_access_token(token, get_settings().jwt_secret)
+    except PyJWTError:
+        return None
+    return CurrentUser(id=int(payload["sub"]), email=payload["email"])

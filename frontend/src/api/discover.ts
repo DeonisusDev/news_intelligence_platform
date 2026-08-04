@@ -13,6 +13,8 @@ export interface SummaryCard {
   enriched_at: string;
   first_published_at: string;
   image_url: string | null;
+  // Phase 7 - the logged-in requester's own vote on this cluster, if any.
+  my_vote: 1 | -1 | null;
 }
 
 export interface SourceArticle {
@@ -53,7 +55,10 @@ export async function fetchDiscoverPage(offset: number, topic?: string): Promise
   const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
   if (topic) params.set("topic", topic);
 
-  const response = await fetch(`${API_BASE_URL}/discover?${params}`);
+  // credentials: "include" - GET /discover branches on the session cookie (Phase 7: a logged-in
+  // request gets an affinity-re-ranked feed with my_vote populated per card; without this, the
+  // browser silently drops the cookie and every request looks anonymous to the backend.
+  const response = await fetch(`${API_BASE_URL}/discover?${params}`, { credentials: "include" });
   if (!response.ok) throw new Error(`Failed to load feed (${response.status})`);
   return response.json();
 }
@@ -68,4 +73,23 @@ export async function fetchTopics(): Promise<TopicStat[]> {
   const response = await fetch(`${API_BASE_URL}/stats/topics`);
   if (!response.ok) throw new Error(`Failed to load topics (${response.status})`);
   return response.json();
+}
+
+// Phase 7: thumbs up/down. Requires a logged-in session (httpOnly cookie) - 401s otherwise.
+export async function submitFeedback(clusterId: string, vote: 1 | -1): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/discover/${clusterId}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ vote }),
+  });
+  if (!response.ok) throw new Error(`Failed to submit feedback (${response.status})`);
+}
+
+export async function removeFeedback(clusterId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/discover/${clusterId}/feedback`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error(`Failed to remove feedback (${response.status})`);
 }

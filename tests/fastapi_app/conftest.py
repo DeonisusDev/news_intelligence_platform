@@ -62,19 +62,29 @@ class FakePostgresConnection:
     def cursor(self):
         return self._cursor
 
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
 
 @pytest.fixture
 def make_client():
     """Returns a factory: make_client(ch_responses=[...]) -> TestClient with a fake ClickHouse
-    client wired in, one canned result list per expected .query() call."""
+    client wired in, one canned result list per expected .query() call. Postgres is also wired
+    to a harmless empty fake by default (list_summary_cards declares it as a dependency but only
+    touches it for logged-in requests, which none of these tests send)."""
 
     def _make(ch_responses=None):
         fake = FakeClickHouseClient(ch_responses or [])
         app.dependency_overrides[get_clickhouse_client] = lambda: fake
+        app.dependency_overrides[get_postgres_connection] = lambda: FakePostgresConnection([])
         return TestClient(app), fake
 
     yield _make
     app.dependency_overrides.pop(get_clickhouse_client, None)
+    app.dependency_overrides.pop(get_postgres_connection, None)
 
 
 class FakeUsersCursor:
@@ -157,3 +167,80 @@ def make_pg_client():
 
     yield _make
     app.dependency_overrides.pop(get_postgres_connection, None)
+
+
+class FakeFeedbackCursor:
+    """Understands exactly the cluster_feedback queries routers/discover.py issues (Phase 7),
+    backed by an in-memory {(user_id, cluster_id): vote} dict - real upsert/delete/select
+    branching without a real Postgres."""
+
+    def __init__(self, store):
+        self._store = store
+        self._result = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def execute(self, sql, params=None):
+        sql_l = sql.lower()
+        if "insert into cluster_feedback" in sql_l:
+            self._store[(params["user_id"], params["cluster_id"])] = params["vote"]
+        elif "delete from cluster_feedback" in sql_l:
+            self._store.pop((params["user_id"], params["cluster_id"]), None)
+        elif "select cluster_id, vote from cluster_feedback" in sql_l:
+            self._result = [
+                {"cluster_id": cluster_id, "vote": vote}
+                for (user_id, cluster_id), vote in self._store.items()
+                if user_id == params["user_id"]
+            ]
+        else:
+            raise AssertionError(f"FakeFeedbackCursor doesn't understand: {sql!r}")
+
+    def fetchall(self):
+        return self._result or []
+
+
+class FakeFeedbackConnection:
+    def __init__(self, store):
+        self._store = store
+
+    def cursor(self):
+        return FakeFeedbackCursor(self._store)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+
+@pytest.fixture
+def make_feedback_client():
+    """Returns a factory: make_feedback_client(ch_responses=[...], feedback_store={...}) ->
+    (TestClient, fake_clickhouse, feedback_store) - wires both ClickHouse and an in-memory
+    cluster_feedback table (Phase 7) so ranking/feedback endpoint tests can run without a real
+    database. Use login_as() below to attach a valid session cookie."""
+
+    def _make(ch_responses=None, feedback_store=None):
+        ch_fake = FakeClickHouseClient(ch_responses or [])
+        store = feedback_store if feedback_store is not None else {}
+        app.dependency_overrides[get_clickhouse_client] = lambda: ch_fake
+        app.dependency_overrides[get_postgres_connection] = lambda: FakeFeedbackConnection(store)
+        return TestClient(app), ch_fake, store
+
+    yield _make
+    app.dependency_overrides.pop(get_clickhouse_client, None)
+    app.dependency_overrides.pop(get_postgres_connection, None)
+
+
+def login_as(client, user_id=1, email="user@example.com"):
+    """Mints a real, valid session cookie (via the real JWT code path in auth.py) and attaches
+    it to `client` - lets feedback/list-ranking tests exercise a "logged in" request without
+    going through /auth/login."""
+    from auth import create_access_token
+
+    token = create_access_token(user_id=user_id, email=email, secret=os.environ["JWT_SECRET"])
+    client.cookies.set("access_token", token)
