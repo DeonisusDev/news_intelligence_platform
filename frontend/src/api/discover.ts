@@ -63,6 +63,17 @@ export async function fetchDiscoverPage(offset: number, topic?: string): Promise
   return response.json();
 }
 
+// The "Liked" page: previously-upvoted clusters, most recently liked first. Requires a session
+// cookie - 401s if logged out (the caller should only invoke this when currentUser is set).
+export async function fetchLikedPage(offset: number): Promise<SummaryCard[]> {
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+  const response = await fetch(`${API_BASE_URL}/discover/liked?${params}`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error(`Failed to load liked stories (${response.status})`);
+  return response.json();
+}
+
 export async function fetchClusterDetail(clusterId: string): Promise<SummaryDetail> {
   const response = await fetch(`${API_BASE_URL}/discover/${clusterId}`);
   if (!response.ok) throw new Error(`Failed to load story (${response.status})`);

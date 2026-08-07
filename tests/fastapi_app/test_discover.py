@@ -241,6 +241,57 @@ def test_list_reranks_by_affinity_to_previously_liked_clusters(make_feedback_cli
     assert [c["cluster_id"] for c in body] == ["cluster2", "cluster1"]
 
 
+# --- Phase 7.1: "Liked" page -----------------------------------------------------------
+
+
+def test_liked_requires_login(make_client):
+    client, _ = make_client(ch_responses=[])
+
+    response = client.get("/discover/liked")
+
+    assert response.status_code == 401
+
+
+def test_liked_returns_empty_without_querying_clickhouse_when_nothing_liked(make_feedback_client):
+    client, fake, _ = make_feedback_client()
+    login_as(client, user_id=1)
+
+    response = client.get("/discover/liked")
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert fake.queries == []
+
+
+def test_liked_excludes_downvotes_and_orders_most_recently_liked_first(make_feedback_client):
+    # Insertion order is "liked chronologically" per the fake's contract (see conftest) -
+    # cluster1 liked first, then cluster2, then cluster3 downvoted (should never appear).
+    client, fake, _ = make_feedback_client(
+        ch_responses=[[CARD_ROW, CARD_ROW_SPORTS]],
+        feedback_store={(1, "cluster1"): 1, (1, "cluster2"): 1, (1, "cluster3"): -1},
+    )
+    login_as(client, user_id=1)
+
+    response = client.get("/discover/liked")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["cluster_id"] for c in body] == ["cluster2", "cluster1"]
+    assert all(c["my_vote"] == 1 for c in body)
+
+
+def test_liked_scopes_to_the_current_user(make_feedback_client):
+    client, fake, _ = make_feedback_client(
+        ch_responses=[[CARD_ROW]],
+        feedback_store={(1, "cluster1"): 1, (2, "cluster1"): -1},
+    )
+    login_as(client, user_id=1)
+
+    response = client.get("/discover/liked")
+
+    assert [c["cluster_id"] for c in response.json()] == ["cluster1"]
+
+
 def test_list_reports_the_users_own_vote_per_card(make_feedback_client):
     # cluster1 has an up-vote, so the affinity-profile lookup fires too (fed back its own topic).
     client, fake, _ = make_feedback_client(

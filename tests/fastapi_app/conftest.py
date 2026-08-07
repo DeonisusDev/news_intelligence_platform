@@ -196,6 +196,16 @@ class FakeFeedbackCursor:
                 for (user_id, cluster_id), vote in self._store.items()
                 if user_id == params["user_id"]
             ]
+        elif "select cluster_id from cluster_feedback" in sql_l:
+            # Phase 7.1 "liked" query - dict insertion order stands in for `created_at desc`
+            # (most recently liked last-in), so tests seed feedback_store in like order.
+            liked = [
+                cluster_id
+                for (user_id, cluster_id), vote in reversed(list(self._store.items()))
+                if user_id == params["user_id"] and vote == 1
+            ]
+            offset = params["offset"]
+            self._result = [{"cluster_id": cid} for cid in liked[offset : offset + params["limit"]]]
         else:
             raise AssertionError(f"FakeFeedbackCursor doesn't understand: {sql!r}")
 

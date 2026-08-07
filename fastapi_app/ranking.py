@@ -18,8 +18,9 @@ _TOPIC_MATCH_WEIGHT = 2
 @dataclass
 class AffinityCard:
     """Just enough of a liked cluster to build a profile from - the profile query only ever
-    selects topic/keywords, not a full SummaryCard."""
+    selects cluster_id/topic/keywords, not a full SummaryCard."""
 
+    cluster_id: str
     topic: str
     keywords: list[str]
 
@@ -28,6 +29,7 @@ class AffinityCard:
 class AffinityProfile:
     topic_weights: dict[str, int]
     keyword_weights: dict[str, int]
+    liked_cluster_ids: frozenset[str]
 
     @property
     def is_empty(self) -> bool:
@@ -41,12 +43,22 @@ def build_affinity_profile(liked: list[AffinityCard]) -> AffinityProfile:
         topic_weights[item.topic] = topic_weights.get(item.topic, 0) + 1
         for kw in item.keywords:
             keyword_weights[kw] = keyword_weights.get(kw, 0) + 1
-    return AffinityProfile(topic_weights, keyword_weights)
+    return AffinityProfile(
+        topic_weights, keyword_weights, frozenset(item.cluster_id for item in liked)
+    )
 
 
 def _affinity_score(card: SummaryCard, profile: AffinityProfile) -> int:
-    score = profile.topic_weights.get(card.topic, 0) * _TOPIC_MATCH_WEIGHT
-    score += sum(profile.keyword_weights.get(kw, 0) for kw in card.keywords)
+    # A liked cluster necessarily matches itself on every topic/keyword it contributed to the
+    # profile. Without subtracting that self-contribution back out, a liked card would always
+    # score highest of all and permanently pin itself at the top of the feed, instead of just
+    # boosting other, genuinely similar stories.
+    is_self = card.cluster_id in profile.liked_cluster_ids
+    topic_count = profile.topic_weights.get(card.topic, 0) - (1 if is_self else 0)
+    score = max(topic_count, 0) * _TOPIC_MATCH_WEIGHT
+    for kw in card.keywords:
+        keyword_count = profile.keyword_weights.get(kw, 0) - (1 if is_self else 0)
+        score += max(keyword_count, 0)
     return score
 
 

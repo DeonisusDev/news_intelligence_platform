@@ -83,6 +83,23 @@ _USER_VOTES_SQL = """
 select cluster_id, vote from cluster_feedback where user_id = %(user_id)s
 """
 
+# Phase 7.1: "Liked" page - just the cluster_ids the user upvoted, most recently liked first, so
+# a fresh Postgres upsert (see _UPSERT_FEEDBACK_SQL) reorders this list without a re-vote.
+_LIKED_CLUSTER_IDS_SQL = """
+select cluster_id from cluster_feedback
+where user_id = %(user_id)s and vote = 1
+order by created_at desc
+limit %(limit)s offset %(offset)s
+"""
+
+_CARDS_BY_IDS_SQL = f"""
+{_CLUSTER_MEDIA_CTE}
+select {_CARD_COLUMNS}
+from mart.summary_clusters c final
+inner join cluster_media m on m.cluster_id = c.cluster_id
+where c.enrichment_status = 'success' and c.cluster_id in {{cluster_ids:Array(String)}}
+"""
+
 _UPSERT_FEEDBACK_SQL = """
 insert into cluster_feedback (user_id, cluster_id, vote)
 values (%(user_id)s, %(cluster_id)s, %(vote)s)
@@ -151,12 +168,41 @@ def list_summary_cards(
             _TOPIC_KEYWORDS_FOR_CLUSTERS_SQL, parameters={"cluster_ids": liked_cluster_ids}
         ).result_rows
         profile = build_affinity_profile(
-            [AffinityCard(topic=row[1], keywords=row[2]) for row in profile_rows]
+            [AffinityCard(cluster_id=row[0], topic=row[1], keywords=row[2]) for row in profile_rows]
         )
         candidates = rank_by_affinity(candidates, profile)
 
     page = candidates[offset : offset + limit]
     return [card.model_copy(update={"my_vote": votes.get(card.cluster_id)}) for card in page]
+
+
+@router.get("/liked", response_model=list[SummaryCard])
+def list_liked_cards(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    client: Client = Depends(get_clickhouse_client),
+    current_user: CurrentUser = Depends(get_current_user),
+    conn: PGConnection = Depends(get_postgres_connection),
+) -> list[SummaryCard]:
+    # Registered ahead of GET /{cluster_id} below - otherwise FastAPI would match "liked" as a
+    # cluster_id there instead of routing here.
+    with conn.cursor() as cur:
+        cur.execute(
+            _LIKED_CLUSTER_IDS_SQL, {"user_id": current_user.id, "limit": limit, "offset": offset}
+        )
+        ordered_ids = [row["cluster_id"] for row in cur.fetchall()]
+
+    if not ordered_ids:
+        return []
+
+    rows = client.query(_CARDS_BY_IDS_SQL, parameters={"cluster_ids": ordered_ids}).result_rows
+    cards_by_id = {row[0]: _row_to_card(row) for row in rows}
+    # Preserve the Postgres vote-recency order - ClickHouse's `in {array}` doesn't guarantee it.
+    return [
+        cards_by_id[cluster_id].model_copy(update={"my_vote": 1})
+        for cluster_id in ordered_ids
+        if cluster_id in cards_by_id
+    ]
 
 
 @router.get("/{cluster_id}", response_model=SummaryDetail)

@@ -8,13 +8,20 @@ export function useFeedback() {
     mutationFn: ({ clusterId, vote }: { clusterId: string; vote: 1 | -1 }) =>
       submitFeedback(clusterId, vote),
     // The backend re-ranks the feed by affinity after a vote, so a full refetch (not just a
-    // local cache patch) is the only way to reflect the new ordering.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["discover"] }),
+    // local cache patch) is the only way to reflect the new ordering. Also invalidate "liked" -
+    // an upvote should make the card appear there, a downvote should drop it off.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discover"] });
+      queryClient.invalidateQueries({ queryKey: ["liked"] });
+    },
   });
 
   const unvote = useMutation({
     mutationFn: (clusterId: string) => removeFeedback(clusterId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["discover"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discover"] });
+      queryClient.invalidateQueries({ queryKey: ["liked"] });
+    },
   });
 
   return { vote, unvote };

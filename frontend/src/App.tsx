@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { Heart } from "lucide-react";
+import { useEffect, useState } from "react";
 import { AuthDialog } from "@/components/AuthDialog";
 import { SourceDialog } from "@/components/SourceDialog";
 import { SummaryCard } from "@/components/SummaryCard";
@@ -9,8 +10,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser, useLogout } from "@/hooks/useAuth";
 import { useDiscoverFeed } from "@/hooks/useDiscoverFeed";
 import { useInfiniteScrollTrigger } from "@/hooks/useInfiniteScrollTrigger";
+import { useLikedFeed } from "@/hooks/useLikedFeed";
+
+type View = "feed" | "liked";
 
 function App() {
+  const [view, setView] = useState<View>("feed");
   const [topic, setTopic] = useState<string | null>(null);
   const [openClusterId, setOpenClusterId] = useState<string | null>(null);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -18,14 +23,22 @@ function App() {
   const { data: currentUser } = useCurrentUser();
   const logoutMutation = useLogout();
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } =
-    useDiscoverFeed(topic ?? undefined);
+  // The Liked toggle only exists while logged in - fall back to the main feed on logout so a
+  // stale "liked" view isn't left stranded with no way back to it.
+  useEffect(() => {
+    if (!currentUser) setView("feed");
+  }, [currentUser]);
+
+  const feed = useDiscoverFeed(topic ?? undefined);
+  const liked = useLikedFeed(view === "liked" && !!currentUser);
+  const active = view === "liked" ? liked : feed;
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } = active;
 
   const sentinelRef = useInfiniteScrollTrigger(() => {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
   });
 
-  const cards = data?.pages.flat() ?? [];
+  const cards = active.data?.pages.flat() ?? [];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -33,7 +46,18 @@ function App() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold">News Intelligence</h1>
-            <TopicFilter selected={topic} onSelect={setTopic} />
+            {view === "feed" && <TopicFilter selected={topic} onSelect={setTopic} />}
+            {currentUser && (
+              <Button
+                variant={view === "liked" ? "secondary" : "ghost"}
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setView(view === "liked" ? "feed" : "liked")}
+              >
+                <Heart className="size-3.5" fill={view === "liked" ? "currentColor" : "none"} />
+                Liked
+              </Button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {currentUser ? (
@@ -62,7 +86,17 @@ function App() {
 
       <main className="mx-auto max-w-5xl px-4 py-6">
         {isError && (
-          <p className="text-sm text-destructive">Couldn't load the feed. Is the API running?</p>
+          <p className="text-sm text-destructive">
+            {view === "liked"
+              ? "Couldn't load your liked stories. Is the API running?"
+              : "Couldn't load the feed. Is the API running?"}
+          </p>
+        )}
+
+        {view === "liked" && !isLoading && cards.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Nothing liked yet - tap the thumbs-up on a story to save it here.
+          </p>
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
