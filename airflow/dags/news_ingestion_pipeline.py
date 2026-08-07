@@ -124,9 +124,15 @@ def news_ingestion_pipeline():
             metrics.rows_duplicate = rows_duplicate
 
     @task
-    def load_postgres_to_clickhouse_raw(fetch_result: dict, **context) -> None:
+    def load_postgres_to_clickhouse_raw(**context) -> None:
+        # run_id comes straight from this task's own context, not from an upstream fetch task's
+        # XCom - it's the DAG run's id, identical for every task in the run, and this copy scans
+        # Postgres by ingestion_run_id (see clickhouse_io.load_new_rows) so it picks up *both*
+        # providers' new rows in one pass regardless of which fetch task "supplied" the id. Taking
+        # it from a specific fetch task's return value would draw a misleading provider-specific
+        # edge in the Airflow graph view, as if this step only depended on NewsAPI.
         with audit.track(context) as metrics:
-            rows_copied = clickhouse_io.load_new_rows(run_id=fetch_result["ingestion_run_id"])
+            rows_copied = clickhouse_io.load_new_rows(run_id=context["run_id"])
             metrics.rows_fetched = rows_copied
             metrics.rows_new = rows_copied
 
@@ -173,7 +179,7 @@ def news_ingestion_pipeline():
     gnews_result = fetch_gnews_articles()
     (
         load_raw_to_postgres([newsapi_result, gnews_result])
-        >> load_postgres_to_clickhouse_raw(newsapi_result)
+        >> load_postgres_to_clickhouse_raw()
         >> dbt_run
         >> cluster_articles()
         >> llm_enrichment()
