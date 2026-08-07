@@ -51,9 +51,14 @@ export interface TopicStat {
   cluster_count: number;
 }
 
-export async function fetchDiscoverPage(offset: number, topic?: string): Promise<SummaryCard[]> {
+export async function fetchDiscoverPage(
+  offset: number,
+  topic?: string,
+  q?: string,
+): Promise<SummaryCard[]> {
   const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
   if (topic) params.set("topic", topic);
+  if (q) params.set("q", q);
 
   // credentials: "include" - GET /discover branches on the session cookie (Phase 7: a logged-in
   // request gets an affinity-re-ranked feed with my_vote populated per card; without this, the

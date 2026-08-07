@@ -89,6 +89,30 @@ def test_list_passes_topic_filter_through(make_client):
     assert params["topic"] == "Technology"
 
 
+def test_list_passes_search_query_through(make_client):
+    client, fake = make_client(ch_responses=[[]])
+
+    client.get("/discover", params={"q": "apple"})
+
+    sql, params = fake.queries[0]
+    assert "ILIKE {q_pattern:String}" in sql
+    assert "c.summary" in sql
+    assert "c.keywords" in sql
+    assert params["q_pattern"] == "%apple%"
+
+
+def test_list_combines_topic_and_search_filters(make_client):
+    client, fake = make_client(ch_responses=[[]])
+
+    client.get("/discover", params={"topic": "Technology", "q": "apple"})
+
+    sql, params = fake.queries[0]
+    assert "topic = {topic:String}" in sql
+    assert "ILIKE {q_pattern:String}" in sql
+    assert params["topic"] == "Technology"
+    assert params["q_pattern"] == "%apple%"
+
+
 def test_list_rejects_limit_above_max(make_client):
     client, _ = make_client(ch_responses=[[]])
     response = client.get("/discover", params={"limit": 1000})

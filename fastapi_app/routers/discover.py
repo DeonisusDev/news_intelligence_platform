@@ -131,6 +131,9 @@ def list_summary_cards(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     topic: str | None = Query(None, description="Filter to a single topic, exact match"),
+    q: str | None = Query(
+        None, description="Case-insensitive substring match on the summary or keywords"
+    ),
     client: Client = Depends(get_clickhouse_client),
     current_user: CurrentUser | None = Depends(get_optional_current_user),
     conn: PGConnection = Depends(get_postgres_connection),
@@ -138,8 +141,15 @@ def list_summary_cards(
     where_extra = ""
     params: dict = {}
     if topic:
-        where_extra = " and c.topic = {topic:String}"
+        where_extra += " and c.topic = {topic:String}"
         params["topic"] = topic
+    if q:
+        # arrayExists over keywords since ClickHouse's ILIKE only works on strings, not arrays.
+        where_extra += (
+            " and (c.summary ILIKE {q_pattern:String} "
+            "or arrayExists(k -> k ILIKE {q_pattern:String}, c.keywords))"
+        )
+        params["q_pattern"] = f"%{q}%"
 
     if current_user is None:
         # Anonymous/logged-out - plain unweighted feed, unchanged from pre-Phase-7 behavior.

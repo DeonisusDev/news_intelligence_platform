@@ -1,4 +1,4 @@
-import { Heart } from "lucide-react";
+import { Heart, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AuthDialog } from "@/components/AuthDialog";
 import { SourceDialog } from "@/components/SourceDialog";
@@ -6,6 +6,7 @@ import { SummaryCard } from "@/components/SummaryCard";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TopicFilter } from "@/components/TopicFilter";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser, useLogout } from "@/hooks/useAuth";
 import { useDiscoverFeed } from "@/hooks/useDiscoverFeed";
@@ -17,6 +18,8 @@ type View = "feed" | "liked";
 function App() {
   const [view, setView] = useState<View>("feed");
   const [topic, setTopic] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [openClusterId, setOpenClusterId] = useState<string | null>(null);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
@@ -29,7 +32,13 @@ function App() {
     if (!currentUser) setView("feed");
   }, [currentUser]);
 
-  const feed = useDiscoverFeed(topic ?? undefined);
+  // Debounce the search box so every keystroke doesn't fire its own /discover request.
+  useEffect(() => {
+    const id = setTimeout(() => setSearch(searchInput.trim()), 400);
+    return () => clearTimeout(id);
+  }, [searchInput]);
+
+  const feed = useDiscoverFeed(topic ?? undefined, search || undefined);
   const liked = useLikedFeed(view === "liked" && !!currentUser);
   const active = view === "liked" ? liked : feed;
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } = active;
@@ -85,6 +94,18 @@ function App() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-6">
+        {view === "feed" && (
+          <div className="relative mb-4 max-w-sm">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search stories..."
+              className="h-8 pl-8"
+            />
+          </div>
+        )}
+
         {isError && (
           <p className="text-sm text-destructive">
             {view === "liked"
